@@ -1,0 +1,109 @@
+name: Build Finance Management App
+
+on: [push]
+
+jobs:
+  # --- BUILD FOR WINDOWS ---
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          if (Test-Path requirements.txt) { pip install -r requirements.txt }
+          
+      - name: Build Windows EXE
+        run: |
+          pyinstaller --noconsole --onefile --name="FinanceManagement" `
+          --hidden-import=reportlab.graphics.barcode `
+          --hidden-import=reportlab.pdfbase._fontdata `
+          --hidden-import=matplotlib.backends.backend_tkagg `
+          --hidden-import=babel.numbers `
+          FinMan.py
+          
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-Exe
+          path: dist/FinanceManagement.exe
+
+  # --- BUILD FOR MAC ---
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          
+      - name: Build Mac App
+        run: |
+          pyinstaller --noconsole --onefile --name="FinanceManagement_Mac" \
+          --hidden-import=reportlab.graphics.barcode \
+          --hidden-import=reportlab.pdfbase._fontdata \
+          --hidden-import=matplotlib.backends.backend_tkagg \
+          --hidden-import=babel.numbers \
+          FinMan.py
+          
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MacOS-App
+          path: dist/FinanceManagement_Mac
+
+  # --- BUILD FOR LINUX ---
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install System Dependencies (Crucial for Linux GUI)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk libtk8.6
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Build Linux Binary
+        run: |
+          pyinstaller --noconsole --onefile --name="FinanceManagement_Linux" \
+          --hidden-import=reportlab.graphics.barcode \
+          --hidden-import=reportlab.pdfbase._fontdata \
+          --hidden-import=matplotlib.backends.backend_tkagg \
+          --hidden-import=babel.numbers \
+          FinMan.py
+
+      # Adding execution permissions so the uploaded file remains runnable
+      - name: Set permissions
+        run: chmod +x dist/FinanceManagement_Linux
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Linux-Binary
+          path: dist/FinanceManagement_Linux
