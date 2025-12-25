@@ -22,18 +22,18 @@ jobs:
           
       - name: Build Mac App
         run: |
-          python -m PyInstaller --noconsole --onefile --name="Charity_Mac" \
+          python -m PyInstaller --noconsole --onefile --name="FinMan_Mac" \
           --hidden-import=reportlab.graphics.barcode \
           --hidden-import=reportlab.pdfbase._fontdata \
           --hidden-import=matplotlib.backends.backend_tkagg \
           --hidden-import=babel.numbers \
-          Charity.py
+          FinMan.py
           
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: MacOS-App
-          path: dist/Charity_Mac
+          path: dist/FinMan_Mac
 
   # --- BUILD FOR WINDOWS ---
   build-windows:
@@ -55,20 +55,20 @@ jobs:
       - name: Build Windows EXE
         # IMPORTANT: Windows uses backticks (`) for line continuation in PowerShell
         run: |
-          python -m PyInstaller --noconsole --onefile --name="Charity" `
+          python -m PyInstaller --noconsole --onefile --name="FinMan" `
           --hidden-import=reportlab.graphics.barcode `
           --hidden-import=reportlab.pdfbase._fontdata `
           --hidden-import=matplotlib.backends.backend_tkagg `
           --hidden-import=babel.numbers `
           --collect-data reportlab `
           --collect-all matplotlib `
-          Charity.py
+          FinMan.py
           
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Windows-Exe
-          path: dist/Charity.exe
+          path: dist/FinMan.exe
 
   # --- BUILD FOR LINUX ---
   build-linux:
@@ -94,16 +94,16 @@ jobs:
 
       - name: Build Linux Binary
         run: |
-          python -m PyInstaller --noconsole --onefile --name="Charity_Linux" \
+          python -m PyInstaller --noconsole --onefile --name="FinMan_Linux" \
           --hidden-import=reportlab.graphics.barcode \
           --hidden-import=reportlab.pdfbase._fontdata \
           --hidden-import=matplotlib.backends.backend_tkagg \
           --hidden-import=babel.numbers \
-          Charity.py
+          FinMan.py
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Linux-Binary
-          path: dist/Charity_Linux
+          path: dist/FinMan_Linux
 
