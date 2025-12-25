@@ -42,7 +42,7 @@ jobs:
     # We include specific hidden imports for Pillow (PIL) to fix the image error
     - name: Build with PyInstaller
       run: |
-        pyinstaller --onefile --clean --name "Charity-Desktop" \
+        pyinstaller --onefile --clean --name "Finance-Management" \
         --hidden-import=pandas \
         --hidden-import=matplotlib \
         --hidden-import=reportlab \
