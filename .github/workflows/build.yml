@@ -55,7 +55,7 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Charity-App-${{ matrix.os }}
+        name: Finance-App-${{ matrix.os }}
         path: dist/
 
 
