@@ -48,127 +48,7 @@ class FinanceManager:
         # 6. Start auto-save
         self.auto_save()
 
-# class FinanceManager:
-#     def __init__(self, root):
-#         self.root = root
-#         self.root.title("Personal Finance Manager")
-#         self.root.geometry("1500x950")
-        
-#         # 1. DEFINE FILE NAMES AND BASIC DATA STRUCTURES FIRST
-#         self.data_file = "finance_data.json"
 
-
-        
-         
-#         # Categories with Nested Sub-Subcategories
-#         self.categories = [
-#             "Household cost", "Car", "Health/Medicine", "Sadaka", "Fixed/contract",
-#             "Extra", "Entertainment", "Family Education", "Savings cost"
-#         ]
-        
-#         # Target Structure: Category -> { Subcategory: [Sub-subcategories] }
-#         self.subcategories = {
-#             "Household cost": {
-#                 "Food": ["Aldi", "Lidl", "Local Market"],
-#                 "Cloth": ["Zara", "H&M", "Local"],
-#                 "House materials": ["IKEA", "Leroy Merlin"],
-#                 "Office Cost": ["Paper", "Ink", "Electricity"],
-#                 "Haircut": ["Salon", "Barber"]
-#             },
-#             "Car": {
-#                 "Fuel": ["Shell", "Aral"],
-#                 "Service": ["Oil Change", "Wash"]
-#             },
-#             "Health/Medicine": {
-#                 "Consultation": ["Dr. A", "Dr. B"],
-#                 "Health Ins": ["AXA", "Allianz"],
-#                 "Envivas Ins": ["BUPA", "Cigna"],
-#                 "Dental": ["Dentist 1", "Dentist 2"],
-#                 "Medicine": ["Pharmacy 1", "Pharmacy 2"],
-#                 "Blood Test": ["Lab 1", "Lab 2"],
-#                 "Supp/ Med": ["Vitamin", "Supplements"],
-#                 "Others": ["General"]
-#             },
-#             "Sadaka": {
-#                 "DIB": ["Org A", "Org B"],
-#                 "BD Madrasa": ["Madrasa 1", "Madrasa 2"],
-#                 "Sadaka group": ["Group A", "Group B"],
-#                 "Parents": ["Father", "Mother"],
-#                 "BD Project": ["Project A", "Project B"],
-#                 "Fitr": ["Zakat Fitr 1", "Zakat Fitr 2"],
-#                 "Food Program": ["Program A", "Program B"],
-#                 "CCR25": ["CCR25 Part 1", "CCR25 Part 2"],
-#                 "DIB/ Madrasa": ["Madrasa A", "Madrasa B"],
-#                 "Quran Project": ["Project X", "Project Y"]
-#             },
-#             "Fixed/contract": {
-#                 "House Rent": ["Jan", "Feb", "Mar"],
-#                 "Electricity": ["Bill 1", "Bill 2"],
-#                 "Internet": ["Provider 1", "Provider 2"],
-#                 "ARD/ ZDF": ["ARD", "ZDF"],
-#                 "Public Transport": ["Bus", "Train"],
-#                 "Mobile Contract": ["Vodafone", "Telekom"],
-#                 "Sports": ["Gym", "Club"],
-#                 "Bank": ["Bank 1", "Bank 2"]
-#             },
-#             "Family Education": {
-#                 "Quran Lesson": ["Teacher 1", "Teacher 2"],
-#                 "School": ["Tuition", "Books"]
-#             },
-#             "Savings cost": {
-#                 "Qurbani": ["Cow 1", "Cow 2"],
-#                 "Zakat": ["Zakat A", "Zakat B"],
-#                 "Tax Payment": ["Tax 1", "Tax 2"],
-#                 "Tax Mishu": ["Penalty 1", "Penalty 2"],
-#                 "Hajj": ["Package A", "Package B"],
-#                 "Investment": ["Stocks", "Crypto"],
-#                 "BD tour": ["Trip 1", "Trip 2"]
-#             },
-#             "Entertainment": {
-#                 "Car Rent": ["Days A", "Days B"],
-#                 "Car Oil": ["Station 1", "Station 2"],
-#                 "Room Rent": ["Studio", "1 Bedroom"],
-#                 "Food": ["Dinner", "Party"],
-#                 "Amusements": ["Cinema", "Park"],
-#                 "Fish/ pond": ["Fishing 1", "Fishing 2"],
-#                 "Tickets": ["Event A", "Event B"],
-#                 "Equipments": ["Gear 1", "Gear 2"],
-#                 "Foreign Tax": ["Visa Fee", "Duty"]
-#             },
-#             "Extra": {
-#                 "Gifts/Invitation": ["Wedding", "Birthday"],
-#                 "Holiday": ["Summer", "Winter"],
-#                 "Invest": ["Stocks", "Bonds"],
-#                 "Tax Apply": ["Filing", "Accountant"],
-#                 "Visa/Residence/Pass": ["Application", "Renewal"],
-#                 "Umrah": ["Package 1", "Package 2"],
-#                 "Language": ["Course 1", "Course 2"],
-#                 "Passport": ["New", "Renewal"]
-#             }
-#         }
-        
-#         self.transactions = [] 
-#         self.income_sources = []
-#         self.investments = []
-#         self.investment_returns = []
-#         self.investment_categories = []
-        
-#         # BD Section Data
-#         self.bd_balance = 0.0
-#         self.bd_conversion_rate = 140.0
-#         self.bd_transactions = [] 
-
-#         # BD Filter Variables (Must be instance variables to fix NameError)
-#         self.bd_cat_year_var = None
-#         self.bd_cat_month_var = None
-#         self.bd_subcat_filter_cat = None
-#         self.bd_subcat_filter_sub = None
-#         self.bd_subsubcat_filter_cat = None
-#         self.bd_subsubcat_filter_sub = None
-
-#         self.load_data()
-#         self.create_widgets()
-#         self.auto_save()
         
     def load_data(self):
         if os.path.exists(self.data_file):
@@ -390,6 +270,7 @@ class FinanceManager:
         self.notebook.add(self.analysis_tab, text="Analysis")
         self.create_analysis_tab() # RESTORED
         
+     
     def create_input_tab(self):
         # Header
         header_frame = ttk.Frame(self.input_tab, height=150) 
@@ -594,16 +475,6 @@ class FinanceManager:
         self.expense_subsubcategory_combo['values'] = sub_data
         self.expense_subsubcategory_var.set('')
     
-    def create_database_tab(self):
-        # ...
-        # CHANGE: Don't create self.db_year_var here, just use the one from __init__
-        year_cb = ttk.Combobox(year_frame, textvariable=self.db_year_var, 
-                              values=[str(y) for y in range(2020, 2031)], 
-                              width=10, state="readonly")
-        year_cb.pack(side='left', padx=5)
-        # ...
-   
-        # ... (Add TOTAL and AVERAGE rows as previously provided) ...
         
     def update_input_summary_table(self):
         """Refreshes the Matrix with the specific Balance formula:
@@ -711,417 +582,8 @@ class FinanceManager:
 
         self.summary_tree.tag_configure('summary', background='#d0e0ff', font=('Arial', 9, 'bold'))
         
-    def update_input_summary_table1(self):
-        """Refreshes the Matrix with strict Net Investment logic"""
-        # Safety check: ensure summary_tree exists
-        if not hasattr(self, 'summary_tree'): return
         
-        for item in self.summary_tree.get_children():
-            self.summary_tree.delete(item)
-        
-        # BD Header Update
-        euro_eq = self.bd_balance / self.bd_conversion_rate if self.bd_conversion_rate else 0
-        self.current_bd_balance_label.config(
-            text=f"BD Balance: {self.bd_balance:.2f} Taka (≈{euro_eq:.2f} €)"
-        )
-
-        # Get the currently selected year (initialized in __init__)
-        current_year = self.db_year_var.get() 
-        
-        months_data = defaultdict(lambda: {
-            'income': 0.0, 'expense': 0.0, 'invest_out': 0.0, 
-            'returns': 0.0, 'bd_expense': 0.0
-        })
-        
-        # --- 1. AGGREGATE DATA ---
-        # Regular Income (Salary, etc.)
-        for inc in self.income_sources:
-            if inc['date'].endswith(current_year):
-                try:
-                    m = int(inc['date'].split('/')[1])
-                    months_data[m]['income'] += float(inc['amount'])
-                except: continue
-        
-        # Regular Expenses (EXCLUDING 'Savings cost' category)
-        for exp in self.transactions:
-            if exp['date'].endswith(current_year):
-                if exp.get('category') != "Savings cost":
-                    try:
-                        m = int(exp['date'].split('/')[1])
-                        months_data[m]['expense'] += float(exp['amount'])
-                    except: continue
-                
-        # Investment Capital Out (Money you put into investments)
-        for inv in self.investments:
-            if inv['date'].endswith(current_year):
-                try:
-                    m = int(inv['date'].split('/')[1])
-                    months_data[m]['invest_out'] += float(inv['amount'])
-                except: continue
-        
-        # Investment Returns (Money earned from investments)
-        for ret in self.investment_returns:
-            if ret['date'].endswith(current_year):
-                try:
-                    m = int(ret['date'].split('/')[1])
-                    months_data[m]['returns'] += float(ret['amount'])
-                except: continue
-                
-        # BD Taka Expenses
-        for bd_exp in self.bd_transactions:
-            if bd_exp['date'].endswith(current_year):
-                try:
-                    m = int(bd_exp['date'].split('/')[1])
-                    months_data[m]['bd_expense'] += float(bd_exp['amount'])
-                except: continue
-
-        # --- 2. RENDER ROWS ---
-        month_names = ["January", "February", "March", "April", "May", "June", 
-                       "July", "August", "September", "October", "November", "December"]
-        
-        totals = defaultdict(float)
-        for i, m_name in enumerate(month_names):
-            m_num = i + 1
-            d = months_data[m_num]
-            
-            # MATH: Net Investment Income = Gains - Capital Put Out
-            net_invest_inc = d['returns'] - d['invest_out']
-            # Total Balance = Salary Income - Spending + Net Profit/Loss from Investment
-            month_balance = d['income'] - d['expense'] + net_invest_inc
-            
-            self.summary_tree.insert('', 'end', values=(
-                m_name,
-                f"{d['income']:.2f}",
-                f"{d['expense']:.2f}",
-                f"{net_invest_inc:.2f}", # Net Income from Invest and Return
-                f"{d['bd_expense']:.0f}",
-                f"{month_balance:.2f}"
-            ), tags=('even' if i % 2 == 0 else 'odd'))
-            
-            # Update Grand Totals
-            totals['income'] += d['income']
-            totals['expense'] += d['expense']       
-            totals['net_invest'] += net_invest_inc
-            totals['bd_expense'] += d['bd_expense']
-            totals['balance'] += month_balance
-
-        # --- 3. TOTAL & AVERAGE ROWS ---
-        self.summary_tree.insert('', 'end', values=(
-            "TOTAL", 
-            f"{totals['income']:.2f}", 
-            f"{totals['expense']:.2f}",
-            f"{totals['net_invest']:.2f}", 
-            f"{totals['bd_expense']:.0f}",
-            f"{totals['balance']:.2f}"
-        ), tags=('summary',))
-
-        self.summary_tree.insert('', 'end', values=(
-            "AVERAGE", 
-            f"{totals['income']/12:.2f}", 
-            f"{totals['expense']/12:.2f}",
-            f"{totals['net_invest']/12:.2f}", 
-            f"{totals['bd_expense']/12:.0f}",
-            f"{totals['balance']/12:.2f}"
-        ), tags=('summary',))
-
-        self.summary_tree.tag_configure('summary', background='#d0e0ff', font=('Arial', 9, 'bold'))
-        self.summary_tree.tag_configure('even', background='#ffffff')
-        self.summary_tree.tag_configure('odd', background='#f9f9f9')
-    def update_input_summary_tables(self):
-        """Refreshes the Matrix with strict Net Investment logic"""
-        for item in self.summary_tree.get_children():
-            self.summary_tree.delete(item)
-        
-        # BD Header Update
-        euro_eq = self.bd_balance / self.bd_conversion_rate if self.bd_conversion_rate else 0
-        self.current_bd_balance_label.config(
-            text=f"BD Balance: {self.bd_balance:.2f} Taka (≈{euro_eq:.2f} €)"
-        )
-
-        current_year = self.db_year_var.get() # Use the year filter from DB tab or a fixed one
-        months_data = defaultdict(lambda: {
-            'income': 0.0, 'expense': 0.0, 'invest_out': 0.0, 
-            'returns': 0.0, 'bd_expense': 0.0
-        })
-        
-        # --- 1. AGGREGATE DATA ---
-        # Regular Income
-        for inc in self.income_sources:
-            if inc['date'].endswith(current_year):
-                m = int(inc['date'].split('/')[1])
-                months_data[m]['income'] += float(inc['amount'])
-        
-        # Regular Expenses (EXCLUDING Savings Category)
-        for exp in self.transactions:
-            if exp['date'].endswith(current_year):
-                # Filter out 'Savings cost' category from Expenses to avoid double-counting
-                if exp.get('category') != "Savings cost":
-                    m = int(exp['date'].split('/')[1])
-                    months_data[m]['expense'] += float(exp['amount'])
-                
-        # Investment Capital Out
-        for inv in self.investments:
-            if inv['date'].endswith(current_year):
-                m = int(inv['date'].split('/')[1])
-                months_data[m]['invest_out'] += float(inv['amount'])
-        
-        # Investment Returns In
-        for ret in self.investment_returns:
-            if ret['date'].endswith(current_year):
-                m = int(ret['date'].split('/')[1])
-                months_data[m]['returns'] += float(ret['amount'])
-                
-        # BD Taka Expenses
-        for bd_exp in self.bd_transactions:
-            if bd_exp['date'].endswith(current_year):
-                m = int(bd_exp['date'].split('/')[1])
-                months_data[m]['bd_expense'] += float(bd_exp['amount'])
-
-        # --- 2. RENDER ROWS ---
-        month_names = ["January", "February", "March", "April", "May", "June", 
-                       "July", "August", "September", "October", "November", "December"]
-        
-        totals = defaultdict(float)
-        for i, m_name in enumerate(month_names):
-            m_num = i + 1
-            d = months_data[m_num]
-            
-            # MATH:
-            net_invest_inc = d['returns'] - d['invest_out']
-            month_balance = d['income'] - d['expense'] + net_invest_inc
-            
-            self.summary_tree.insert('', 'end', values=(
-                m_name,
-                f"{d['income']:.2f}",
-                f"{d['expense']:.2f}",
-                f"{d['invest_out']:.2f}",
-                f"{d['returns']:.2f}",
-                f"{net_invest_inc:.2f}", # Net Income from Invest and Return
-                f"{d['bd_expense']:.0f}",
-                f"{month_balance:.2f}"
-            ), tags=('even' if i % 2 == 0 else 'odd'))
-            
-            # Update Grand Totals
-            totals['income'] += d['income']
-            totals['expense'] += d['expense']
-            totals['invest_out'] += d['invest_out']
-            totals['returns'] += d['returns']
-            totals['net_invest'] += net_invest_inc
-            totals['bd_expense'] += d['bd_expense']
-            totals['balance'] += month_balance
-
-        # --- 3. TOTAL & AVERAGE ROWS ---
-        self.summary_tree.insert('', 'end', values=(
-            "TOTAL", f"{totals['income']:.2f}", f"{totals['expense']:.2f}",
-            f"{totals['invest_out']:.2f}", f"{totals['returns']:.2f}",
-            f"{totals['net_invest']:.2f}", f"{totals['bd_expense']:.0f}",
-            f"{totals['balance']:.2f}"
-        ), tags=('summary',))
-
-        self.summary_tree.insert('', 'end', values=(
-            "AVERAGE", f"{totals['income']/12:.2f}", f"{totals['expense']/12:.2f}",
-            f"{totals['invest_out']/12:.2f}", f"{totals['returns']/12:.2f}",
-            f"{totals['net_invest']/12:.2f}", f"{totals['bd_expense']/12:.0f}",
-            f"{totals['balance']/12:.2f}"
-        ), tags=('summary',))
-
-        self.summary_tree.tag_configure('summary', background='#d0e0ff', font=('Arial', 9, 'bold'))
-    def update_input_summary_table3(self):
-        """Refreshes the Monthly Financial Matrix in the Input Tab"""
-        # 1. Clear existing rows
-        for item in self.summary_tree.get_children():
-            self.summary_tree.delete(item)
-        
-        # 2. Update the BD Balance Label
-        euro_eq = self.bd_balance / self.bd_conversion_rate if self.bd_conversion_rate else 0
-        self.current_bd_balance_label.config(
-            text=f"BD Current Balance: {self.bd_balance:.2f} Taka (≈{euro_eq:.2f} €)"
-        )
-
-        # 3. Aggregate Data by Month for the Current Year
-        current_year = str(datetime.now().year)
-        months_data = defaultdict(lambda: {
-            'income': 0.0, 'expense': 0.0, 'investment': 0.0, 'bd_expense': 0.0
-        })
-        
-        def get_month_if_current_year(date_str):
-            try:
-                # Format: dd/mm/yyyy
-                parts = date_str.split('/')
-                if parts[2] == current_year:
-                    return int(parts[1])
-                return None
-            except: return None
-
-        # Accumulate Income
-        for inc in self.income_sources:
-            m = get_month_if_current_year(inc['date'])
-            if m: months_data[m]['income'] += inc['amount']
-        
-        # Accumulate Expenses (Exclude Savings/Investments to avoid double counting)
-        for exp in self.transactions:
-            if exp.get('category') == "Savings cost": continue
-            m = get_month_if_current_year(exp['date'])
-            if m: months_data[m]['expense'] += exp['amount']
-                
-        # Accumulate Investments
-        for inv in self.investments:
-            m = get_month_if_current_year(inv['date'])
-            if m: months_data[m]['investment'] += inv['amount']
-                
-        # Accumulate BD Expenses (Convert to Taka)
-        for bd_exp in self.bd_transactions:
-            m = get_month_if_current_year(bd_exp['date'])
-            if m: months_data[m]['bd_expense'] += bd_exp['amount']
-
-        # 4. Insert Rows for all 12 Months
-        month_names = ["January", "February", "March", "April", "May", "June", 
-                       "July", "August", "September", "October", "November", "December"]
-        
-        grand_totals = {'income': 0, 'expense': 0, 'investment': 0, 'bd_expense': 0, 'balance': 0}
-        
-        for i, m_name in enumerate(month_names):
-            m_num = i + 1
-            d = months_data[m_num]
-            
-            # Balance = Income - (Expense + Investment)
-            balance = d['income'] - d['expense'] - d['investment']
-            
-            tag = 'even' if i % 2 == 0 else 'odd'
-            self.summary_tree.insert('', 'end', values=(
-                m_name,
-                f"{d['income']:.2f}",
-                f"{d['expense']:.2f}",
-                f"{d['investment']:.2f}",
-                f"{d['bd_expense']:.2f}",
-                f"{balance:.2f}"
-            ), tags=(tag,))
-            
-            for key in grand_totals:
-                if key == 'balance': grand_totals[key] += balance
-                else: grand_totals[key] += d[key]
-        
-        # 5. Add Total and Average Rows
-        self.summary_tree.insert('', 'end', values=(
-            "TOTAL",
-            f"{grand_totals['income']:.2f}", f"{grand_totals['expense']:.2f}",
-            f"{grand_totals['investment']:.2f}", f"{grand_totals['bd_expense']:.2f}",
-            f"{grand_totals['balance']:.2f}"
-        ), tags=('total',))
-
-        self.summary_tree.insert('', 'end', values=(
-            "AVERAGE",
-            f"{grand_totals['income']/12:.2f}", f"{grand_totals['expense']/12:.2f}",
-            f"{grand_totals['investment']/12:.2f}", f"{grand_totals['bd_expense']/12:.2f}",
-            f"{grand_totals['balance']/12:.2f}"
-        ), tags=('average',))
-
-        # Re-configure tags for visibility
-        self.summary_tree.tag_configure('total', background='#d0e0ff', font=('Arial', 10, 'bold'))
-        self.summary_tree.tag_configure('average', background='#e6e6fa', font=('Arial', 10, 'bold'))
-    def update_input_summary_table2(self):
-        for item in self.summary_tree.get_children():
-            self.summary_tree.delete(item)
-        
-        euro_eq = self.bd_balance / self.bd_conversion_rate if self.bd_conversion_rate else 0
-        self.current_bd_balance_label.config(
-            text=f"BD Current Balance: {self.bd_balance:.2f} Taka (≈{euro_eq:.2f} €)"
-        )
-
-        months_data = defaultdict(lambda: {
-            'income': 0.0,
-            'expense': 0.0, 
-            'investment': 0.0,
-            'bd_expense': 0.0
-        })
-        
-        current_year = datetime.now().year
-        
-        def get_month_key(date_str):
-            try:
-                parts = date_str.split('/')
-                d = datetime.strptime(date_str, '%d/%m/%Y')
-                return d.month
-            except:
-                return None
-
-        for inc in self.income_sources:
-            m = get_month_key(inc['date'])
-            if m:
-                months_data[m]['income'] += inc['amount']
-        
-        for exp in self.transactions:
-            if exp.get('category') == "Savings cost":
-                continue
-            m = get_month_key(exp['date'])
-            if m:
-                months_data[m]['expense'] += exp['amount']
-                
-        for inv in self.investments:
-            m = get_month_key(inv['date'])
-            if m:
-                months_data[m]['investment'] += inv['amount']
-                
-        for bd_exp in self.bd_transactions:
-            m = get_month_key(bd_exp['date'])
-            if m:
-                months_data[m]['bd_expense'] += bd_exp['amount']
-
-        month_names = ["January", "February", "March", "April", "May", "June", 
-                       "July", "August", "September", "October", "November", "December"]
-        
-        grand_totals = {'income': 0, 'expense': 0, 'investment': 0, 'bd_expense': 0, 'balance': 0}
-        active_months_count = 0
-        
-        for i, m_name in enumerate(month_names):
-            m_num = i + 1
-            data = months_data[m_num]
-            
-            income = data['income']
-            expense = data['expense']
-            invest = data['investment']
-            bd_exp = data['bd_expense']
-            
-            balance = income - expense - invest
-            
-            if income > 0 or expense > 0 or invest > 0 or bd_exp > 0:
-                active_months_count += 1
-            
-            tag = 'even' if i % 2 == 0 else 'odd'
-            
-            self.summary_tree.insert('', 'end', values=(
-                m_name,
-                f"{income:.2f}",
-                f"{expense:.2f}",
-                f"{invest:.2f}",
-                f"{bd_exp:.2f}",
-                f"{balance:.2f}"
-            ), tags=(tag,))
-            
-            grand_totals['income'] += income
-            grand_totals['expense'] += expense
-            grand_totals['investment'] += invest
-            grand_totals['bd_expense'] += bd_exp
-            grand_totals['balance'] += balance
-        
-        self.summary_tree.insert('', 'end', values=(
-            "TOTAL",
-            f"{grand_totals['income']:.2f}",
-            f"{grand_totals['expense']:.2f}",
-            f"{grand_totals['investment']:.2f}",
-            f"{grand_totals['bd_expense']:.2f}",
-            f"{grand_totals['balance']:.2f}"
-        ), tags=('total',))
-
-        if active_months_count == 0: active_months_count = 1
-        self.summary_tree.insert('', 'end', values=(
-            "AVERAGE",
-            f"{grand_totals['income']/active_months_count:.2f}",
-            f"{grand_totals['expense']/active_months_count:.2f}",
-            f"{grand_totals['investment']/active_months_count:.2f}",
-            f"{grand_totals['bd_expense']/active_months_count:.2f}",
-            f"{grand_totals['balance']/active_months_count:.2f}"
-        ), tags=('average',))
+  
 
     # --- Helper Methods (Input) ---
 
@@ -1280,6 +742,7 @@ class FinanceManager:
         
         self.save_data()
         messagebox.showinfo("Success", "Renamed successfully!")
+        
     def propagate_name_change(self, level, old_val, new_val, parent_cat=None, parent_sub=None):
         """Helper to ensure existing database records match new names"""
         count = 0
@@ -1611,123 +1074,7 @@ class FinanceManager:
             self.db_subsub_sub_combo['values'] = subs
             self.db_subsub_sub_var.set('')
         
-    def create_database_tab2(self):
-        main_container = ttk.Frame(self.database_tab)
-        main_container.pack(fill='both', expand=True, padx=5, pady=5)
-        
-        top_section = ttk.LabelFrame(main_container, text="Categories View", padding=5)
-        top_section.pack(fill='both', expand=True, padx=5, pady=5)
-        
-        top_filter_frame = ttk.Frame(top_section)
-        top_filter_frame.pack(fill='x', padx=5, pady=5)
-        
-        ttk.Label(top_filter_frame, text="Year:").pack(side='left', padx=5)
-        self.db_year_var = tk.StringVar(value=str(datetime.now().year))
-        years = [str(y) for y in range(2020, 2031)]
-        ttk.Combobox(top_filter_frame, textvariable=self.db_year_var, values=years, width=10).pack(side='left', padx=5)
-        
-        ttk.Label(top_filter_frame, text="Month:").pack(side='left', padx=5)
-        self.db_month_var = tk.StringVar(value="All")
-        months = ["All"] + [str(i) for i in range(1, 13)]
-        ttk.Combobox(top_filter_frame, textvariable=self.db_month_var, values=months, width=10).pack(side='left', padx=5)
-        
-        ttk.Button(top_filter_frame, text="Update", command=self.update_category_table).pack(side='left', padx=10)
-        ttk.Button(top_filter_frame, text="Export CSV", command=self.export_csv).pack(side='left', padx=5)
-        ttk.Button(top_filter_frame, text="Import CSV", command=self.import_csv).pack(side='left', padx=5)
-        
-        cat_table_frame = ttk.Frame(top_section)
-        cat_table_frame.pack(fill='both', expand=True, padx=5, pady=5)
-        
-        cat_v_scroll = ttk.Scrollbar(cat_table_frame, orient='vertical')
-        cat_h_scroll = ttk.Scrollbar(cat_table_frame, orient='horizontal')
-        
-        self.cat_tree = ttk.Treeview(cat_table_frame, yscrollcommand=cat_v_scroll.set, 
-                                     xscrollcommand=cat_h_scroll.set, height=6)
-        cat_v_scroll.config(command=self.cat_tree.yview)
-        cat_h_scroll.config(command=self.cat_tree.xview)
-        
-        cat_v_scroll.pack(side='right', fill='y')
-        cat_h_scroll.pack(side='bottom', fill='x')
-        self.cat_tree.pack(side='left', fill='both', expand=True)
-        
-        # mid_section = ttk.LabelFrame(main_container, text="Subcategories View", padding=5)
-        # mid_section.pack(fill='both', expand=True, padx=5, pady=5)
-        
-        # mid_filter_frame = ttk.Frame(mid_section)
-        # mid_filter_frame.pack(fill='x', padx=5, pady=5)
-        
-        # ttk.Label(mid_filter_frame, text="Category:").pack(side='left', padx=5)
-        # self.subcat_filter_cat_var = tk.StringVar()
-        # self.subcat_filter_cat_combo = ttk.Combobox(mid_filter_frame, textvariable=self.subcat_filter_cat_var,
-        #                                            values=self.categories, width=20)
-        # self.subcat_filter_cat_combo.pack(side='left', padx=5)
-        
-        # ttk.Button(mid_filter_frame, text="Update", command=self.update_subcategory_table).pack(side='left', padx=10)
-        
-        mid_section = ttk.LabelFrame(main_container, text="Subcategories View (Year + Category)", padding=5)
-        mid_section.pack(fill='both', expand=True, pady=5)
-       
-        mid_filter = ttk.Frame(mid_section)
-        mid_filter.pack(fill='x')
-        ttk.Label(mid_filter, text="Category:").pack(side='left', padx=5)
-        self.subcat_filter_cat_var = tk.StringVar()
-        self.subcat_filter_cat_combo = ttk.Combobox(mid_filter, textvariable=self.subcat_filter_cat_var, values=self.categories)
-        self.subcat_filter_cat_combo.pack(side='left', padx=5)
-        ttk.Button(mid_filter, text="Update Subcategory Table", command=self.update_subcategory_table).pack(side='left', padx=10)
-        
-        # The Subcategory Treeview
-        self.subcat_tree = ttk.Treeview(mid_section, show='headings')
-        self.subcat_tree.pack(fill='both', expand=True)
-
-               
-        # Bottom: Sub-subcategories View
-        bot_section = ttk.LabelFrame(main_container, text="Sub-Subcategories View", padding=5)
-        bot_section.pack(fill='both', expand=True, padx=5, pady=5)
-        
-        bot_filter_frame = ttk.Frame(bot_section)
-        bot_filter_frame.pack(fill='x', padx=5, pady=5)
-        
-        # 1. Category Filter
-        ttk.Label(bot_filter_frame, text="Category:").pack(side='left', padx=5)
-        self.db_subsub_cat_var = tk.StringVar()
-        self.db_subsub_cat_combo = ttk.Combobox(bot_filter_frame, textvariable=self.db_subsub_cat_var, values=self.categories, width=20)
-        self.db_subsub_cat_combo.pack(side='left', padx=5)
-        self.db_subsub_cat_combo.bind('<<ComboboxSelected>>', self.sync_db_subsub_filters)
-        
-        # 2. Subcategory Filter (The missing one)
-        ttk.Label(bot_filter_frame, text="Subcategory:").pack(side='left', padx=5)
-        self.db_subsub_sub_var = tk.StringVar()
-        self.db_subsub_sub_combo = ttk.Combobox(bot_filter_frame, textvariable=self.db_subsub_sub_var, width=20)
-        self.db_subsub_sub_combo.pack(side='left', padx=5)
-        
-        ttk.Button(bot_filter_frame, text="Update Table", command=self.update_subsubcategory_table).pack(side='left', padx=10)
-        
-       
-        subsub_table_frame = ttk.Frame(bot_section)
-        subsub_table_frame.pack(fill='both', expand=True, padx=5, pady=5)
-        
-        subsub_v_scroll = ttk.Scrollbar(subsub_table_frame, orient='vertical')
-        subsub_h_scroll = ttk.Scrollbar(subsub_table_frame, orient='horizontal')
-        
-        self.subsub_tree = ttk.Treeview(subsub_table_frame, yscrollcommand=subsub_v_scroll.set,
-                                        xscrollcommand=subsub_h_scroll.set, height=6)
-        subsub_v_scroll.config(command=self.subsub_tree.yview)
-        subsub_h_scroll.config(command=self.subsub_tree.xview)
-        
-        subsub_v_scroll.pack(side='right', fill='y')
-        subsub_h_scroll.pack(side='bottom', fill='x')
-        self.subsub_tree.pack(side='left', fill='both', expand=True)
-
-        self.update_category_table()
-
-    def sync_db_subsub_filters(self, event=None):
-        """Updates the subcategory combobox based on the category selected in DB tab"""
-        cat = self.db_subsub_cat_var.get()
-        if cat in self.subcategories:
-            # Get keys of the dictionary (Subcategories)
-            subs = list(self.subcategories[cat].keys())
-            self.db_subsub_sub_combo['values'] = subs
-            self.db_subsub_sub_var.set('') # Clear previous selection
+    
             
     def db_sync_subsubs(self, event=None):
         """Updates the Subcategory dropdown in the Database tab specifically"""
@@ -1832,246 +1179,11 @@ class FinanceManager:
         # Call the helper to render the table
         self._render_database_rows(self.subcat_tree, subs, matrix)
 
-    def update_subsubcategory_table(self):
-        year = self.db_year_var.get()
-        cat = self.db_subsub_cat_var.get()
-        sub = self.db_subsub_sub_var.get()
-        if not cat or not sub: return
-
-        ss_list = self.subcategories.get(cat, {}).get(sub, [])
-        matrix = defaultdict(lambda: defaultdict(float))
+ 
         
-        for t in self.transactions:
-            if t.get('date', '').endswith(year) and t.get('category') == cat and t.get('subcategory') == sub:
-                try:
-                    m_idx = int(t['date'].split('/')[1])
-                    ss = t.get('subsubcategory')
-                    if ss in ss_list:
-                        matrix[m_idx][ss] += float(t.get('amount', 0))
-                except: continue
-
-        self._render_database_rows(self.subsub_tree, ss_list, matrix)    
-        
-    def update_subcategory_table2(self):
-        """Subcategory View: Filters by Year and Category."""
-        for item in self.subcat_tree.get_children():
-            self.subcat_tree.delete(item)
-        
-        year = self.db_year_var.get()
-        cat = self.subcat_filter_cat_var.get()
-        if not cat: return
-
-        subs = list(self.subcategories.get(cat, {}).keys())
-        columns = ['Month'] + subs + ['Total']
-        self.subcat_tree['columns'] = columns
-        self.subcat_tree['show'] = 'headings'
-        
-        for col in columns:
-            self.subcat_tree.heading(col, text=col)
-            self.subcat_tree.column(col, width=110, anchor='center')
-
-        matrix = defaultdict(lambda: defaultdict(float))
-        for t in self.transactions:
-            if t.get('date', '').endswith(year) and t.get('category') == cat:
-                try:
-                    m_idx = int(t['date'].split('/')[1])
-                    sub = t.get('subcategory')
-                    if sub in subs:
-                        matrix[m_idx][sub] += float(t.get('amount', 0))
-                except: continue
-
-        self._fill_table_rows(self.subcat_tree, subs, matrix)
-
-    # def update_subsubcategory_table(self):
-    #     """Sub-subcategory View: Filters by Year, Category, and Subcategory."""
-    #     for item in self.subsub_tree.get_children():
-    #         self.subsub_tree.delete(item)
-        
-    #     year = self.db_year_var.get()
-    #     cat = self.subsub_filter_cat_var.get()
-    #     sub = self.subsub_filter_sub_var.get()
-    #     if not cat or not sub: return
-
-    #     ss_list = self.subcategories.get(cat, {}).get(sub, [])
-    #     columns = ['Month'] + ss_list + ['Total']
-    #     self.subsub_tree['columns'] = columns
-    #     self.subsub_tree['show'] = 'headings'
-        
-    #     for col in columns:
-    #         self.subsub_tree.heading(col, text=col)
-    #         self.subsub_tree.column(col, width=110, anchor='center')
-
-    #     matrix = defaultdict(lambda: defaultdict(float))
-    #     for t in self.transactions:
-    #         if t.get('date', '').endswith(year) and t.get('category') == cat and t.get('subcategory') == sub:
-    #             try:
-    #                 m_idx = int(t['date'].split('/')[1])
-    #                 ss = t.get('subsubcategory')
-    #                 if ss in ss_list:
-    #                     matrix[m_idx][ss] += float(t.get('amount', 0))
-    #             except: continue
-
-    #     self._fill_table_rows(self.subsub_tree, ss_list, matrix)
     
-    def update_subsubcategory_table2(self):
-        """Sub-Subcategory View: Month rows vs Sub-Subcategories in Columns"""
-        year = self.db_year_var.get()
-        cat = self.db_subsub_cat_var.get()
-        sub = self.db_subsub_sub_var.get()
-        
-        if not cat or not sub:
-            messagebox.showwarning("Filter", "Please select Category and Subcategory")
-            return
-
-        # Get the sub-sub items
-        ss_list = self.subcategories.get(cat, {}).get(sub, [])
-        
-        # !! THE FIX !! - Reset columns and headings
-        cols = ['Month'] + ss_list + ['Total']
-        self.subsub_tree['columns'] = cols
-        for c in cols:
-            self.subsub_tree.heading(c, text=c)
-            self.subsub_tree.column(c, width=100, anchor='center')
-
-        # Clear existing rows
-        for item in self.subsub_tree.get_children():
-            self.subsub_tree.delete(item)
-
-        # Calculate Matrix
-        matrix = defaultdict(lambda: defaultdict(float))
-        for t in self.transactions:
-            if t.get('date', '').endswith(year) and t.get('category') == cat and t.get('subcategory') == sub:
-                try:
-                    m_idx = int(t['date'].split('/')[1])
-                    ss = t.get('subsubcategory')
-                    if ss in ss_list:
-                        matrix[m_idx][ss] += float(t.get('amount', 0))
-                except: continue
-
-        self._render_database_rows(self.subsub_tree, ss_list, matrix)
-        
-    def _render_database_rows2(self, tree, col_items, matrix):
-        """Standardizes row rendering and FORCES column visibility"""
-        month_names = ["January", "February", "March", "April", "May", "June", 
-                       "July", "August", "September", "October", "November", "December"]
-        
-        # 1. CONFIGURE COLUMNS (The Fix for 'Missing Columns')
-        cols = ['Month'] + col_items + ['Total']
-        tree['columns'] = cols
-        
-        for c in cols:
-            tree.heading(c, text=c)
-            # width=120 ensures the column is readable
-            # stretch=False forces the Treeview to expand horizontally, enabling the scrollbar
-            tree.column(c, width=120, anchor='center', stretch=False)
-
-        # 2. CLEAR PREVIOUS DATA
-        for item in tree.get_children():
-            tree.delete(item)
-
-        # 3. CALCULATE AND INSERT DATA
-        grand_total = 0
-        col_sums = defaultdict(float)
-
-        for m_idx in range(1, 13):
-            row = [month_names[m_idx-1]]
-            row_sum = 0
-            for item in col_items:
-                val = matrix[m_idx][item]
-                row.append(f"{val:.2f}")
-                row_sum += val
-                col_sums[item] += val
-            row.append(f"{row_sum:.2f}")
-            grand_total += row_sum
-            tree.insert('', 'end', values=row)
-
-        # 4. TOTAL & AVERAGE ROWS
-        t_row, a_row = ["TOTAL"], ["AVERAGE"]
-        for item in col_items:
-            t_row.append(f"{col_sums[item]:.2f}")
-            a_row.append(f"{(col_sums[item]/12):.2f}")
-        
-        t_row.append(f"{grand_total:.2f}")
-        a_row.append(f"{(grand_total/12):.2f}")
-        
-        tree.insert('', 'end', values=t_row, tags=('summary',))
-        tree.insert('', 'end', values=a_row, tags=('summary',))
-        tree.tag_configure('summary', background='#E8EAF6', font=('Arial', 10, 'bold'))
-        
-    # def update_subsubcategory_table(self):
-    #     """Sub-subcategory View: Filters by Year, Category, and Subcategory."""
-    #     for item in self.subsub_tree.get_children():
-    #         self.subsub_tree.delete(item)
-        
-    #     year = self.db_year_var.get()
-    #     cat = self.db_subsub_cat_var.get()
-    #     sub = self.db_subsub_sub_var.get()
-        
-    #     if not cat or not sub:
-    #         messagebox.showwarning("Filter", "Please select both Category and Subcategory")
-    #         return
-
-    #     # Get sub-sub list from structure: subcategories[cat][sub] -> [list]
-    #     ss_list = self.subcategories.get(cat, {}).get(sub, [])
-        
-    #     # Set Columns
-    #     columns = ['Month'] + ss_list + ['Total']
-    #     self.subsub_tree['columns'] = columns
-    #     self.subsub_tree['show'] = 'headings'
-        
-    #     for col in columns:
-    #         self.subsub_tree.heading(col, text=col)
-    #         self.subsub_tree.column(col, width=100, anchor='center')
-
-    #     # Aggregate data for the matrix
-    #     matrix = defaultdict(lambda: defaultdict(float))
-    #     for t in self.transactions:
-    #         if t.get('date', '').endswith(year):
-    #             if t.get('category') == cat and t.get('subcategory') == sub:
-    #                 try:
-    #                     m_idx = int(t['date'].split('/')[1])
-    #                     ss_name = t.get('subsubcategory')
-    #                     if ss_name in ss_list:
-    #                         matrix[m_idx][ss_name] += float(t.get('amount', 0))
-    #                 except: continue
-
-    #     # Month Names for Rows
-    #     month_names = ["January", "February", "March", "April", "May", "June", 
-    #                    "July", "August", "September", "October", "November", "December"]
-        
-    #     col_sums = defaultdict(float)
-    #     grand_total = 0
-
-    #     # Insert 12 Month Rows
-    #     for m_idx in range(1, 13):
-    #         m_name = month_names[m_idx-1]
-    #         row = [m_name]
-    #         row_sum = 0
-    #         for ss in ss_list:
-    #             val = matrix[m_idx][ss]
-    #             row.append(f"{val:.2f}")
-    #             row_sum += val
-    #             col_sums[ss] += val
-            
-    #         row.append(f"{row_sum:.2f}")
-    #         grand_total += row_sum
-    #         self.subsub_tree.insert('', 'end', values=row)
-
-    #     # Add TOTAL row
-    #     total_row = ["TOTAL"]
-    #     for ss in ss_list:
-    #         total_row.append(f"{col_sums[ss]:.2f}")
-    #     total_row.append(f"{grand_total:.2f}")
-    #     self.subsub_tree.insert('', 'end', values=total_row, tags=('summary',))
-
-    #     # Add AVERAGE row
-    #     avg_row = ["AVERAGE"]
-    #     for ss in ss_list:
-    #         avg_row.append(f"{(col_sums[ss]/12):.2f}")
-    #     avg_row.append(f"{(grand_total/12):.2f}")
-    #     self.subsub_tree.insert('', 'end', values=avg_row, tags=('summary',))
-
-    #     self.subsub_tree.tag_configure('summary', background='#E8EAF6', font=('Arial', 10, 'bold'))
+    
+    
         
     def _fill_table_rows(self, tree, col_items, matrix):
         """Helper to fill 12 months, Total, and Average for any treeview"""
@@ -2271,11 +1383,116 @@ class FinanceManager:
         bd_notebook.add(bd_subsubcat_tab, text="Sub-subcategories View")
         self.create_bd_subsubcategories_view(bd_subsubcat_tab)
         
+        # Tab 4: BD Analysis (NEW)
+        bd_ana_tab = ttk.Frame(bd_notebook)
+        bd_notebook.add(bd_ana_tab, text="BD Analysis")
+        self.create_bd_analysis_tab(bd_ana_tab)
         
         # REMOVED: Matrix Summary Tab
         # REMOVED: Transaction Log
 
         self.update_bd_category_combos()
+    
+    def create_bd_analysis_tab(self, parent):
+        """UI for the BD Analysis Tab with hierarchical pie charts"""
+        # --- Filter Frame ---
+        filter_frame = ttk.LabelFrame(parent, text="BD Chart Filters", padding=10)
+        filter_frame.pack(fill='x', padx=10, pady=5)
+
+        # 1. Year Filter
+        ttk.Label(filter_frame, text="Year:").grid(row=0, column=0, padx=5)
+        self.bd_ana_year_var = tk.StringVar(value=str(datetime.now().year))
+        ttk.Combobox(filter_frame, textvariable=self.bd_ana_year_var, 
+                     values=[str(y) for y in range(2020, 2031)], width=8).grid(row=0, column=1, padx=5)
+
+        # 2. Month Filter
+        ttk.Label(filter_frame, text="Month:").grid(row=0, column=2, padx=5)
+        self.bd_ana_month_var = tk.StringVar(value="Whole Year")
+        months = ["Whole Year"] + [datetime(2000, m, 1).strftime('%B') for m in range(1, 13)]
+        ttk.Combobox(filter_frame, textvariable=self.bd_ana_month_var, values=months, width=12).grid(row=0, column=3, padx=5)
+
+        # 3. Plot Level
+        ttk.Label(filter_frame, text="Level:").grid(row=0, column=4, padx=5)
+        self.bd_ana_level_var = tk.StringVar(value="Category")
+        ttk.Combobox(filter_frame, textvariable=self.bd_ana_level_var, 
+                     values=["Category", "Subcategory", "Sub-subcategory"], width=15).grid(row=0, column=5, padx=5)
+
+        # 4. Hierarchical Selectors
+        ttk.Label(filter_frame, text="Category:").grid(row=1, column=0, padx=5, pady=5)
+        self.bd_ana_cat_var = tk.StringVar()
+        self.bd_ana_cat_combo = ttk.Combobox(filter_frame, textvariable=self.bd_ana_cat_var, 
+                                             values=self.categories, width=15)
+        self.bd_ana_cat_combo.grid(row=1, column=1, padx=5)
+        self.bd_ana_cat_combo.bind('<<ComboboxSelected>>', self.sync_bd_ana_pie_subs)
+
+        ttk.Label(filter_frame, text="Subcategory:").grid(row=1, column=2, padx=5)
+        self.bd_ana_sub_var = tk.StringVar()
+        self.bd_ana_sub_combo = ttk.Combobox(filter_frame, textvariable=self.bd_ana_sub_var, width=15)
+        self.bd_ana_sub_combo.grid(row=1, column=3, padx=5)
+
+        ttk.Button(filter_frame, text="Generate BD Chart", command=self.update_bd_pie_chart).grid(row=1, column=5, padx=10)
+
+        # Chart Container
+        self.bd_pie_container = ttk.Frame(parent)
+        self.bd_pie_container.pack(fill='both', expand=True, padx=10, pady=10)
+
+    def sync_bd_ana_pie_subs(self, event=None):
+        """Updates BD subcategory filter list based on Category"""
+        cat = self.bd_ana_cat_var.get()
+        if cat in self.subcategories:
+            subs = list(self.subcategories[cat].keys())
+            self.bd_ana_sub_combo['values'] = subs
+            self.bd_ana_sub_var.set('')
+
+    def update_bd_pie_chart(self):
+        """Processes BD transactions and plots the pie chart"""
+        for widget in self.bd_pie_container.winfo_children():
+            widget.destroy()
+
+        year = self.bd_ana_year_var.get()
+        month_name = self.bd_ana_month_var.get()
+        level = self.bd_ana_level_var.get()
+        sel_cat = self.bd_ana_cat_var.get()
+        sel_sub = self.bd_ana_sub_var.get()
+
+        target_month = None if month_name == "Whole Year" else datetime.strptime(month_name, '%B').month
+        data = defaultdict(float)
+
+        # Logic for aggregating BD Transactions
+        for t in self.bd_transactions:
+            try:
+                t_parts = t['date'].split('/')
+                if t_parts[2] != year: continue
+                if target_month and int(t_parts[1]) != target_month: continue
+                
+                if level == "Category":
+                    data[t['category']] += t['amount']
+                elif level == "Subcategory":
+                    if t['category'] == sel_cat:
+                        data[t['subcategory']] += t['amount']
+                elif level == "Sub-subcategory":
+                    if t['category'] == sel_cat and t['subcategory'] == sel_sub:
+                        ss = t.get('subsubcategory', 'General')
+                        data[ss] += t['amount']
+            except: continue
+
+        # Plotting
+        fig = Figure(figsize=(8, 6), dpi=100)
+        ax = fig.add_subplot(111)
+
+        if data:
+            labels = list(data.keys())
+            values = list(data.values())
+            ax.pie(values, labels=labels, autopct='%1.1f%%', startangle=140, colors=plt.cm.Set3.colors)
+            ax.set_title(f"BD {level} Breakdown\n({month_name} {year})", fontweight='bold')
+        else:
+            ax.text(0.5, 0.5, "No BD Data Found\nCheck Category/Subcategory selection", 
+                    ha='center', va='center', fontsize=12)
+            ax.set_title("No Data", fontweight='bold')
+
+        canvas = FigureCanvasTkAgg(fig, master=self.bd_pie_container)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True)
 
     # Fix for create_bd_subcategories_view method
     def create_bd_subcategories_view(self, parent_frame):
@@ -2486,40 +1703,7 @@ class FinanceManager:
 
         self.bd_cat_tree = self._setup_tree_with_scroll(parent)
 
-    def create_bd_subcategories_view(self, parent):
-        """BD Subcategory View: Filter by Year + Category."""
-        filter_frame = ttk.Frame(parent, padding=10)
-        filter_frame.pack(fill='x')
-        
-        ttk.Label(filter_frame, text="Category:").pack(side='left', padx=5)
-        self.bd_db_sub_cat_var = tk.StringVar()
-        self.bd_db_sub_cat_combo = ttk.Combobox(filter_frame, textvariable=self.bd_db_sub_cat_var, values=self.categories)
-        self.bd_db_sub_cat_combo.pack(side='left', padx=5)
-        
-        ttk.Button(filter_frame, text="Update Subcategory Table", command=self.update_bd_subcat_table).pack(side='left', padx=10)
-
-        self.bd_subcat_tree = self._setup_tree_with_scroll(parent)
-
-    def create_bd_subsubcategories_view(self, parent):
-        """BD Sub-subcategory View: Filter by Year + Category + Subcategory."""
-        filter_frame = ttk.Frame(parent, padding=10)
-        filter_frame.pack(fill='x')
-        
-        ttk.Label(filter_frame, text="Category:").pack(side='left', padx=2)
-        self.bd_db_ss_cat_var = tk.StringVar()
-        self.bd_db_ss_cat_combo = ttk.Combobox(filter_frame, textvariable=self.bd_db_ss_cat_var, values=self.categories, width=15)
-        self.bd_db_ss_cat_combo.pack(side='left', padx=5)
-        self.bd_db_ss_cat_combo.bind('<<ComboboxSelected>>', self.sync_bd_db_ss_filters)
-
-        ttk.Label(filter_frame, text="Subcategory:").pack(side='left', padx=2)
-        self.bd_db_ss_sub_var = tk.StringVar()
-        self.bd_db_ss_sub_combo = ttk.Combobox(filter_frame, textvariable=self.bd_db_ss_sub_var, width=15)
-        self.bd_db_ss_sub_combo.pack(side='left', padx=5)
-        
-        ttk.Button(filter_frame, text="Update Sub-Sub Table", command=self.update_bd_subsub_table).pack(side='left', padx=10)
-
-        self.bd_subsub_tree = self._setup_tree_with_scroll(parent)
-
+   
     def _setup_tree_with_scroll(self, parent):
         """Helper to create a Treeview with a horizontal scrollbar attached."""
         container = ttk.Frame(parent)
@@ -2533,33 +1717,7 @@ class FinanceManager:
         h_scroll.pack(side='bottom', fill='x')
         return tree
     
-    def create_bd_categories_view2(self, parent_frame):
-        # Filter
-        filter_frame = ttk.LabelFrame(parent_frame, text="Filters", padding=5)
-        filter_frame.pack(fill='x', pady=5)
-        
-        ttk.Label(filter_frame, text="Year:").pack(side='left')
-        self.bd_cat_year_var = tk.StringVar(value=str(datetime.now().year))
-        ttk.Combobox(filter_frame, textvariable=self.bd_cat_year_var, values=[str(y) for y in range(2020, 2031)], width=10).pack(side='left', padx=5)
-        
-        ttk.Label(filter_frame, text="Month:").pack(side='left')
-        self.bd_cat_month_var = tk.StringVar(value="All")
-        ttk.Combobox(filter_frame, textvariable=self.bd_cat_month_var, values=["All"]+[str(i) for i in range(1, 13)], width=10).pack(side='left', padx=5)
-        
-        ttk.Button(filter_frame, text="Update", command=lambda: self.update_bd_categories_table(parent_frame)).pack(side='left', padx=10)
-        
-        # Tree
-        table_frame = ttk.Frame(parent_frame)
-        table_frame.pack(fill='both', expand=True, padx=5, pady=5)
-        
-        self.bd_cat_tree_view = ttk.Treeview(table_frame, height=8)
-        self.bd_cat_tree_view.pack(fill='both', expand=True)
-        vs = ttk.Scrollbar(table_frame, orient="vertical", command=self.bd_cat_tree_view.yview)
-        self.bd_cat_tree_view.configure(yscrollcommand=vs.set)
-        vs.pack(side='right', fill='y')
-        self.bd_cat_tree_view.pack(side='left', fill='both', expand=True)
-        
-        self.update_bd_categories_table(parent_frame)
+   
 
     def update_bd_categories_table(self, parent_frame):
         """Similar to DB Category Table: Rows=Months, Cols=Categories"""
@@ -2758,14 +1916,6 @@ class FinanceManager:
         tree.tag_configure('total', background='#d0e0ff', font=('Arial', 9, 'bold'))
         tree.tag_configure('avg', background='#C5E1A5', font=('Arial', 9, 'bold'))
 
-    def update_bd_subsub_filter_subs(self, combo_widget):
-        """Update subcategory options based on selected category"""
-        cat = self.bd_subsubcat_filter_cat.get()
-        if cat in self.subcategories:
-            subs = list(self.subcategories.get(cat, {}).keys())
-            combo_widget['values'] = subs
-            if subs: 
-                self.bd_subsubcat_filter_sub.set(subs[0])
                 
     def sync_bd_db_ss_filters(self, event=None):
         """Updates the Subcategory dropdown specifically for the BD Sub-Sub Tab."""
@@ -2863,30 +2013,7 @@ class FinanceManager:
         tree.insert('', 'end', values=t_row, tags=('bold',))
         tree.insert('', 'end', values=a_row, tags=('bold',))
         tree.tag_configure('bold', background='#f0f0f0', font=('Arial', 10, 'bold'))
-    # def create_bd_matrix_view(self, parent_frame):
-    #     """The previous Group By logic"""
-    #     # Filter for Matrix
-    #     filter_mat = ttk.LabelFrame(parent_frame, text="Matrix Settings", padding=10)
-    #     filter_mat.pack(fill='x', pady=5)
-        
-    #     ttk.Label(filter_mat, text="Group By:").pack(side='left')
-    #     self.bd_group_var = tk.StringVar(value="Category")
-    #     self.bd_group_combo = ttk.Combobox(filter_mat, textvariable=self.bd_group_var, 
-    #                                      values=["Category", "Subcategory", "Subsubcategory"], width=15)
-    #     self.bd_group_combo.pack(side='left', padx=5)
-    #     self.bd_group_combo.bind('<<ComboboxSelected>>', self.refresh_bd_summary_matrix)
-        
-    #     matrix_table_frame = ttk.Frame(parent_frame)
-    #     matrix_table_frame.pack(fill='both', expand=True, padx=5, pady=5)
-        
-    #     self.bd_matrix_tree = ttk.Treeview(matrix_table_frame, height=8)
-    #     self.bd_matrix_tree.pack(fill='both', expand=True, padx=5)
-        
-    #     vs_mat = ttk.Scrollbar(matrix_table_frame, orient="vertical", command=self.bd_matrix_tree.yview)
-    #     self.bd_matrix_tree.configure(yscrollcommand=vs_mat.set)
-    #     vs_mat.pack(side='right', fill='y')
-        
-    #     self.refresh_bd_summary_matrix()
+   
 
     def refresh_bd_summary_matrix(self):
         """Generates Pivot Table based on 'Group By' selection"""
@@ -3241,28 +2368,233 @@ class FinanceManager:
             self.return_category_var.set(self.investment_categories[0])
             
     # --- Analysis Section (RESTORED) ---
-    def create_analysis_tab(self):
-        filter_frame = ttk.LabelFrame(self.analysis_tab, text="Filters", padding=10)
-        filter_frame.pack(fill='x', padx=10, pady=5)
-        
-        ttk.Label(filter_frame, text="Year:").grid(row=0, column=0, padx=5)
-        self.analysis_year_var = tk.StringVar(value=str(datetime.now().year))
-        years = [str(y) for y in range(2020, 2031)]
-        ttk.Combobox(filter_frame, textvariable=self.analysis_year_var, values=years, width=10).grid(row=0, column=1, padx=5)
-        
-        ttk.Label(filter_frame, text="Month (for Euro pie):").grid(row=0, column=2, padx=5)
-        self.analysis_month_var = tk.StringVar(value=str(datetime.now().month))
-        months = [str(i) for i in range(1, 13)]
-        ttk.Combobox(filter_frame, textvariable=self.analysis_month_var, values=months, width=10).grid(row=0, column=3, padx=5)
-        
-        ttk.Button(filter_frame, text="Update Charts", command=self.update_analysis_charts).grid(row=0, column=4, padx=10)
-        
-        self.charts_frame = ttk.Frame(self.analysis_tab)
-        self.charts_frame.pack(fill='both', expand=True, padx=10, pady=5)
-        
-        self.charts_frame.bind('<Configure>', self.on_chart_resize)
-        self.update_analysis_charts()
     
+    def create_detailed_analysis_tab(self):
+        # Filter Frame
+        filter_frame = ttk.LabelFrame(self.detailed_analysis_tab, text="Hierarchy Analysis Filters", padding=10)
+        filter_frame.pack(fill='x', padx=10, pady=5)
+
+        # 1. Year
+        ttk.Label(filter_frame, text="Year:").grid(row=0, column=0, padx=5)
+        self.det_year_var = tk.StringVar(value=str(datetime.now().year))
+        ttk.Combobox(filter_frame, textvariable=self.det_year_var, values=[str(y) for y in range(2020, 2031)], width=8).grid(row=0, column=1, padx=5)
+
+        # 2. Month (with "Whole Year" option)
+        ttk.Label(filter_frame, text="Month:").grid(row=0, column=2, padx=5)
+        self.det_month_var = tk.StringVar(value="Whole Year")
+        month_options = ["Whole Year"] + [datetime(2000, m, 1).strftime('%B') for m in range(1, 13)]
+        ttk.Combobox(filter_frame, textvariable=self.det_month_var, values=month_options, width=12).grid(row=0, column=3, padx=5)
+
+        # 3. Category
+        ttk.Label(filter_frame, text="Category:").grid(row=0, column=4, padx=5)
+        self.det_cat_var = tk.StringVar()
+        self.det_cat_combo = ttk.Combobox(filter_frame, textvariable=self.det_cat_var, values=self.categories, width=15)
+        self.det_cat_combo.grid(row=0, column=5, padx=5)
+        self.det_cat_combo.bind('<<ComboboxSelected>>', self.sync_detailed_analysis_subs)
+
+        # 4. Subcategory
+        ttk.Label(filter_frame, text="Subcategory:").grid(row=0, column=6, padx=5)
+        self.det_sub_var = tk.StringVar()
+        self.det_sub_combo = ttk.Combobox(filter_frame, textvariable=self.det_sub_var, width=15)
+        self.det_sub_combo.grid(row=0, column=7, padx=5)
+
+        # Update Button
+        ttk.Button(filter_frame, text="Generate Pie Chart", command=self.update_detailed_charts).grid(row=0, column=8, padx=15)
+
+        # Chart Frame
+        self.det_chart_frame = ttk.Frame(self.detailed_analysis_tab)
+        self.det_chart_frame.pack(fill='both', expand=True, padx=10, pady=10)
+
+    def sync_detailed_analysis_subs(self, event=None):
+        """Updates the subcategory dropdown based on selected category in Detailed Analysis"""
+        cat = self.det_cat_var.get()
+        if cat in self.subcategories:
+            subs = list(self.subcategories[cat].keys())
+            self.det_sub_combo['values'] = ["All Subcategories"] + subs
+            self.det_sub_var.set("All Subcategories")
+        else:
+            self.det_sub_combo['values'] = []
+            self.det_sub_var.set("")
+
+
+        
+   
+   
+    
+    def create_analysis_tab(self):
+        # We use a Canvas with a Scrollbar to ensure all sections fit
+        ana_canvas = tk.Canvas(self.analysis_tab)
+        v_scroll = ttk.Scrollbar(self.analysis_tab, orient="vertical", command=ana_canvas.yview)
+        self.ana_scroll_frame = ttk.Frame(ana_canvas)
+
+        self.ana_scroll_frame.bind("<Configure>", lambda e: ana_canvas.configure(scrollregion=ana_canvas.bbox("all")))
+        ana_canvas.create_window((0, 0), window=self.ana_scroll_frame, anchor="nw")
+        ana_canvas.configure(yscrollcommand=v_scroll.set)
+
+        v_scroll.pack(side="right", fill="y")
+        ana_canvas.pack(side="left", fill="both", expand=True)
+
+        # ---------------------------------------------------------
+        # SECTION 1: YEARLY OVERVIEW (BAR PLOT)
+        # ---------------------------------------------------------
+        sec1 = ttk.LabelFrame(self.ana_scroll_frame, text="Section 1: Yearly Income vs Expense Overview", padding=10)
+        sec1.pack(fill='x', padx=10, pady=10)
+
+        s1_filter = ttk.Frame(sec1)
+        s1_filter.pack(fill='x', pady=5)
+        
+        ttk.Label(s1_filter, text="Select Year:").pack(side='left', padx=5)
+        self.ana_bar_year_var = tk.StringVar(value=str(datetime.now().year))
+        ttk.Combobox(s1_filter, textvariable=self.ana_bar_year_var, values=[str(y) for y in range(2020, 2031)], width=10).pack(side='left', padx=5)
+        ttk.Button(s1_filter, text="Refresh Bar Chart", command=self.update_bar_chart).pack(side='left', padx=10)
+
+        self.bar_chart_container = ttk.Frame(sec1)
+        self.bar_chart_container.pack(fill='x', pady=5)
+
+        # ---------------------------------------------------------
+        # SECTION 2: DETAILED PIE CHART ANALYSIS
+        # ---------------------------------------------------------
+        sec2 = ttk.LabelFrame(self.ana_scroll_frame, text="Section 2: Detailed Pie Chart Analysis", padding=10)
+        sec2.pack(fill='x', padx=10, pady=10)
+
+        s2_filter = ttk.Frame(sec2)
+        s2_filter.pack(fill='x', pady=5)
+
+        # Time Filters
+        ttk.Label(s2_filter, text="Year:").grid(row=0, column=0, padx=5, sticky='w')
+        self.ana_pie_year_var = tk.StringVar(value=str(datetime.now().year))
+        ttk.Combobox(s2_filter, textvariable=self.ana_pie_year_var, values=[str(y) for y in range(2020, 2031)], width=8).grid(row=0, column=1, padx=5)
+
+        ttk.Label(s2_filter, text="Month:").grid(row=0, column=2, padx=5, sticky='w')
+        self.ana_pie_month_var = tk.StringVar(value="Whole Year")
+        months = ["Whole Year"] + [datetime(2000, m, 1).strftime('%B') for m in range(1, 13)]
+        ttk.Combobox(s2_filter, textvariable=self.ana_pie_month_var, values=months, width=12).grid(row=0, column=3, padx=5)
+
+        # Hierarchy Type
+        ttk.Label(s2_filter, text="Plot Level:").grid(row=0, column=4, padx=5, sticky='w')
+        self.ana_pie_level_var = tk.StringVar(value="Category")
+        ttk.Combobox(s2_filter, textvariable=self.ana_pie_level_var, values=["Category", "Subcategory", "Sub-subcategory"], width=15).grid(row=0, column=5, padx=5)
+
+        # Category/Subcat Selectors
+        ttk.Label(s2_filter, text="If Sub/Sub-Sub, Select Cat:").grid(row=1, column=0, padx=5, pady=5, sticky='w')
+        self.ana_pie_cat_var = tk.StringVar()
+        self.ana_pie_cat_combo = ttk.Combobox(s2_filter, textvariable=self.ana_pie_cat_var, values=self.categories, width=15)
+        self.ana_pie_cat_combo.grid(row=1, column=1, padx=5)
+        self.ana_pie_cat_combo.bind('<<ComboboxSelected>>', self.sync_ana_pie_subs)
+
+        ttk.Label(s2_filter, text="If Sub-Sub, Select Subcat:").grid(row=1, column=2, padx=5, sticky='w')
+        self.ana_pie_sub_var = tk.StringVar()
+        self.ana_pie_sub_combo = ttk.Combobox(s2_filter, textvariable=self.ana_pie_sub_var, width=15)
+        self.ana_pie_sub_combo.grid(row=1, column=3, padx=5)
+
+        ttk.Button(s2_filter, text="Update Pie Chart", command=self.update_pie_chart).grid(row=1, column=5, padx=10)
+
+        self.pie_chart_container = ttk.Frame(sec2)
+        self.pie_chart_container.pack(fill='x', pady=5)
+
+        # Initial plot
+        self.update_bar_chart()
+
+    def sync_ana_pie_subs(self, event=None):
+        cat = self.ana_pie_cat_var.get()
+        if cat in self.subcategories:
+            subs = list(self.subcategories[cat].keys())
+            self.ana_pie_sub_combo['values'] = subs
+            self.ana_pie_sub_var.set('')
+
+    def update_bar_chart(self):
+        """Logic for Section 1: Bar Plot"""
+        for widget in self.bar_chart_container.winfo_children():
+            widget.destroy()
+        
+        year = self.ana_bar_year_var.get()
+        monthly_income = defaultdict(float)
+        monthly_expense = defaultdict(float)
+
+        for inc in self.income_sources:
+            if inc['date'].endswith(year):
+                m = int(inc['date'].split('/')[1])
+                monthly_income[m] += inc['amount']
+        
+        for t in self.transactions:
+            if t['date'].endswith(year):
+                m = int(t['date'].split('/')[1])
+                monthly_expense[m] += t['amount']
+
+        fig = Figure(figsize=(12, 4), dpi=100)
+        ax = fig.add_subplot(111)
+        x = range(1, 13)
+        width = 0.35
+        
+        ax.bar([i - width/2 for i in x], [monthly_income[i] for i in x], width, label='Income', color='#4CAF50')
+        ax.bar([i + width/2 for i in x], [monthly_expense[i] for i in x], width, label='Expense', color='#F44336')
+        
+        ax.set_title(f"Yearly Overview: Income vs Expense ({year})", fontweight='bold')
+        ax.set_xticks(x)
+        ax.set_xticklabels([datetime(2000, m, 1).strftime('%b') for m in x])
+        ax.legend()
+        
+        canvas = FigureCanvasTkAgg(fig, master=self.bar_chart_container)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='x')
+
+    def update_pie_chart(self):
+        """Logic for Section 2: Dynamic Pie Chart"""
+        for widget in self.pie_chart_container.winfo_children():
+            widget.destroy()
+
+        year = self.ana_pie_year_var.get()
+        month_name = self.ana_pie_month_var.get()
+        level = self.ana_pie_level_var.get()
+        sel_cat = self.ana_pie_cat_var.get()
+        sel_sub = self.ana_pie_sub_var.get()
+
+        target_month = None if month_name == "Whole Year" else datetime.strptime(month_name, '%B').month
+        
+        data = defaultdict(float)
+        
+        # Determine filtering and grouping based on level
+        for t in self.transactions:
+            try:
+                t_parts = t['date'].split('/')
+                if t_parts[2] != year: continue
+                if target_month and int(t_parts[1]) != target_month: continue
+                
+                if level == "Category":
+                    data[t['category']] += t['amount']
+                elif level == "Subcategory":
+                    if t['category'] == sel_cat:
+                        data[t['subcategory']] += t['amount']
+                elif level == "Sub-subcategory":
+                    if t['category'] == sel_cat and t['subcategory'] == sel_sub:
+                        ss = t.get('subsubcategory', 'General')
+                        data[ss] += t['amount']
+            except: continue
+
+        fig = Figure(figsize=(8, 5), dpi=100)
+        ax = fig.add_subplot(111)
+
+        if data:
+            ax.pie(data.values(), labels=data.keys(), autopct='%1.1f%%', startangle=140)
+            ax.set_title(f"{level} Breakdown ({month_name} {year})", fontweight='bold')
+        else:
+            ax.text(0.5, 0.5, "No Data Found for Selection", ha='center', va='center')
+
+        canvas = FigureCanvasTkAgg(fig, master=self.pie_chart_container)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='x')
+        
+    def sync_analysis_subs(self, event=None):
+        """Updates the Subcategory filter based on selected Category"""
+        cat = self.analysis_cat_var.get()
+        if cat in self.subcategories:
+            subs = list(self.subcategories[cat].keys())
+            self.analysis_sub_combo['values'] = subs
+            if subs: self.analysis_sub_var.set(subs[0])
+        else:
+            self.analysis_sub_combo['values'] = []
+            self.analysis_sub_var.set("")
+
     def on_chart_resize(self, event):
         self.update_analysis_charts()
         
@@ -3271,129 +2603,114 @@ class FinanceManager:
             widget.destroy()
         
         year = self.analysis_year_var.get()
-        month = self.analysis_month_var.get().zfill(2)
+        month_val = self.analysis_month_var.get()
+        target_cat = self.analysis_cat_var.get()
+        target_sub = self.analysis_sub_var.get()
         
         w = self.charts_frame.winfo_width()
         h = self.charts_frame.winfo_height()
-        
         if w < 100: w = 1500 
-        if h < 100: h = 900
-        fig_w, fig_h = w / 100, h / 100
+        if h < 100: h = 1200 # Increased height for more charts
+        fig_w, fig_h = w / 50, h / 50
         
-        fig = Figure(figsize=(fig_w, fig_h), dpi=90)
+        fig = Figure(figsize=(fig_w, fig_h), dpi=100)
         
-        # 1. Income vs Expense Bar Chart
-        ax1 = fig.add_subplot(3, 2, (1, 2))
+        # --- 1. Income vs Expense Bar Chart ---
+        ax1 = fig.add_subplot(4, 2, (1, 2))
         monthly_income = defaultdict(float)
         monthly_expense = defaultdict(float)
-        
-        for income in self.income_sources:
-            if income['date'].endswith(year):
-                m = income['date'].split('/')[1]
-                monthly_income[int(m)] += income['amount']
-        
+        for inc in self.income_sources:
+            if inc['date'].endswith(year):
+                m = int(inc['date'].split('/')[1])
+                monthly_income[m] += inc['amount']
         for trans in self.transactions:
             if trans['date'].endswith(year):
-                m = trans['date'].split('/')[1]
-                monthly_expense[int(m)] += trans['amount']
-        
-        months_list = list(range(1, 13))
-        income_vals = [monthly_income[m] for m in months_list]
-        expense_vals = [monthly_expense[m] for m in months_list]
+                m = int(trans['date'].split('/')[1])
+                monthly_expense[m] += trans['amount']
         
         x = range(1, 13)
         width = 0.35
-        bars1 = ax1.bar([i - width/2 for i in x], income_vals, width, label='Income', color='green', alpha=0.7)
-        bars2 = ax1.bar([i + width/2 for i in x], expense_vals, width, label='Expense', color='red', alpha=0.7)
-        
-        for bars in [bars1, bars2]:
-            for bar in bars:
-                height = bar.get_height()
-                if height > 0:
-                    ax1.text(bar.get_x() + bar.get_width()/2., height,
-                            f'€{height:.0f}',
-                            ha='center', va='bottom', fontsize=8)
-        
-        ax1.set_xlabel('Month')
-        ax1.set_ylabel('Amount (€)')
+        ax1.bar([i - width/2 for i in x], [monthly_income[i] for i in x], width, label='Income', color='green', alpha=0.7)
+        ax1.bar([i + width/2 for i in x], [monthly_expense[i] for i in x], width, label='Expense', color='red', alpha=0.7)
         ax1.set_title(f'Income vs Expense - {year}', fontweight='bold')
         ax1.set_xticks(x)
         ax1.legend()
-        ax1.grid(axis='y', alpha=0.3)
-        
-        # 2. Monthly Euro Expenses Pie Chart
-        ax2 = fig.add_subplot(3, 2, 3)
-        monthly_cat_expense = defaultdict(float)
-        
-        for trans in self.transactions:
-            if trans['date'].endswith(f"{month}/{year}"):
-                monthly_cat_expense[trans['category']] += trans['amount']
-        
-        if monthly_cat_expense:
-            labels = list(monthly_cat_expense.keys())
-            sizes = list(monthly_cat_expense.values())
-            colors = plt.cm.Set2(range(len(labels)))
-            
-            wedges, texts, autotexts = ax2.pie(sizes, labels=labels, autopct='%1.1f%%',
-                                                colors=colors, startangle=90)
-            for autotext in autotexts:
-                autotext.set_color('black')
-                autotext.set_fontweight('bold')
-            ax2.set_title(f'Expenses by Category - {month}/{year}', fontweight='bold')
-        else:
-            ax2.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax2.transAxes)
-            ax2.set_title(f'Expenses by Category - {month}/{year}', fontweight='bold')
-        
-        # 3. Yearly Euro Expenses Pie Chart
-        ax3 = fig.add_subplot(3, 2, 4)
-        yearly_cat_expense = defaultdict(float)
-        
-        for trans in self.transactions:
-            if trans['date'].endswith(year):
-                yearly_cat_expense[trans['category']] += trans['amount']
-        
-        if yearly_cat_expense:
-            labels = list(yearly_cat_expense.keys())
-            sizes = list(yearly_cat_expense.values())
-            colors = plt.cm.Paired(range(len(labels)))
-            
-            wedges, texts, autotexts = ax3.pie(sizes, labels=labels, autopct='%1.1f%%',
-                                                colors=colors, startangle=90)
-            for autotext in autotexts:
-                autotext.set_color('black')
-                autotext.set_fontweight('bold')
-            ax3.set_title(f'Yearly Expenses by Category - {year}', fontweight='bold')
-        else:
-            ax3.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax3.transAxes)
-            ax3.set_title(f'Yearly Expenses by Category - {year}', fontweight='bold')
 
-        # 4. BD Expenses Pie Chart (Bottom)
-        ax4 = fig.add_subplot(3, 2, (5, 6))
-        bd_cat_expense = defaultdict(float)
+        # --- 2. Monthly Category Pie ---
+        ax2 = fig.add_subplot(4, 2, 3)
+        m_pie_data = defaultdict(float)
+        m_filter = month_val.zfill(2) if month_val != "Whole Year" else None
         
-        for trans in self.bd_transactions:
-            if trans['date'].endswith(year):
-                bd_cat_expense[trans['category']] += trans['amount']
+        for t in self.transactions:
+            t_parts = t['date'].split('/')
+            if t_parts[2] == year:
+                if m_filter is None or t_parts[1] == m_filter:
+                    m_pie_data[t['category']] += t['amount']
         
-        if bd_cat_expense:
-            labels = list(bd_cat_expense.keys())
-            sizes = list(bd_cat_expense.values())
-            colors = plt.cm.Pastel1(range(len(labels)))
-            
-            wedges, texts, autotexts = ax4.pie(sizes, labels=labels, autopct='%1.1f%%',
-                                                colors=colors, startangle=90)
-            for autotext in autotexts:
-                autotext.set_color('black')
-                autotext.set_fontweight('bold')
-            ax4.set_title(f'BD Expenses by Category - {year} (Taka)', fontweight='bold', fontsize=14)
+        self._safe_pie(ax2, m_pie_data, f"Category Mix ({month_val}/{year})")
+
+        # --- 3. Yearly Category Pie ---
+        ax3 = fig.add_subplot(4, 2, 4)
+        y_pie_data = defaultdict(float)
+        for t in self.transactions:
+            if t['date'].endswith(year):
+                y_pie_data[t['category']] += t['amount']
+        self._safe_pie(ax3, y_pie_data, f"Yearly Category Mix ({year})")
+
+        # --- 4. BD Expenses Pie ---
+        ax4 = fig.add_subplot(4, 2, 5)
+        bd_data = defaultdict(float)
+        for t in self.bd_transactions:
+            t_parts = t['date'].split('/')
+            if t_parts[2] == year:
+                if m_filter is None or t_parts[1] == m_filter:
+                    bd_data[t['category']] += t['amount']
+        self._safe_pie(ax4, bd_data, f"BD Expenses ({month_val}/{year})")
+
+        # --- 5. NEW: Subcategory Pie (Filtered by Category) ---
+        ax5 = fig.add_subplot(4, 2, 6)
+        sub_pie_data = defaultdict(float)
+        if target_cat:
+            for t in self.transactions:
+                t_parts = t['date'].split('/')
+                if t_parts[2] == year and t['category'] == target_cat:
+                    if m_filter is None or t_parts[1] == m_filter:
+                        sub_pie_data[t['subcategory']] += t['amount']
+            self._safe_pie(ax5, sub_pie_data, f"Subcats of {target_cat}\n({month_val})")
         else:
-            ax4.text(0.5, 0.5, 'No BD Data', ha='center', va='center', transform=ax4.transAxes, fontsize=14)
-            ax4.set_title(f'BD Expenses by Category - {year}', fontweight='bold', fontsize=14)
-        
-        fig.tight_layout(pad=3.0)
+            ax5.text(0.5, 0.5, "Select Category", ha='center')
+
+        # --- 6. NEW: Sub-Subcategory Pie (Filtered by Subcategory) ---
+        ax6 = fig.add_subplot(4, 2, 7)
+        ss_pie_data = defaultdict(float)
+        if target_cat and target_sub:
+            for t in self.transactions:
+                t_parts = t['date'].split('/')
+                if t_parts[2] == year and t['category'] == target_cat and t['subcategory'] == target_sub:
+                    if m_filter is None or t_parts[1] == m_filter:
+                        ss_item = t.get('subsubcategory', 'Other')
+                        ss_pie_data[ss_item] += t['amount']
+            self._safe_pie(ax6, ss_pie_data, f"Items in {target_sub}\n({month_val})")
+        else:
+            ax6.text(0.5, 0.5, "Select Subcategory", ha='center')
+
+        fig.tight_layout()
         canvas = FigureCanvasTkAgg(fig, master=self.charts_frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill='both', expand=True)
+
+    def _safe_pie(self, ax, data, title):
+        """Helper to plot pie chart or 'No Data' message"""
+        if data:
+            labels = list(data.keys())
+            sizes = list(data.values())
+            ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=plt.cm.Paired.colors)
+            ax.set_title(title, fontweight='bold', fontsize=10)
+        else:
+            ax.text(0.5, 0.5, f"No Data for\n{title}", ha='center', va='center')
+            ax.set_title(title, fontweight='bold', fontsize=10)
+            
+   
 
 def main():
     root = tk.Tk()
