@@ -12,43 +12,50 @@ import os
 import math
 
 class FinanceManager:
+    
+    
     def __init__(self, root):
         self.root = root
         self.root.title("Personal Finance Manager")
         self.root.geometry("1500x950")
         
-        # 1. First, define the file path
         self.data_file = "finance_data.json"
         
-        # 2. Second, initialize the Year Variable (CRITICAL)
-        # This MUST happen before load_data() or create_widgets()
+        # --- INITIALIZE ALL TKINTER VARIABLES FIRST ---
+        # Database Tab Variables (Matching your function logic)
         self.db_year_var = tk.StringVar(value=str(datetime.now().year))
+        self.subcat_filter_cat_var = tk.StringVar()
+        self.subsub_filter_cat_var = tk.StringVar()  # Fixed name
+        self.subsub_filter_sub_var = tk.StringVar()  # Fixed name
         
-        # 3. Initialize all data lists/dicts
-        self.categories = [
-            "Household cost", "Car", "Health/Medicine", "Sadaka", "Fixed/contract",
-            "Extra", "Entertainment", "Family Education", "Savings cost"
-        ]
-        self.subcategories = {} # Will be filled by load_data
+        # Analysis Tab Variables
+        self.analysis_year_var = tk.StringVar(value=str(datetime.now().year))
+        self.analysis_month_var = tk.StringVar(value="Whole Year")
+        self.analysis_cat_var = tk.StringVar()
+        self.analysis_sub_var = tk.StringVar()
+
+        # BD Section Analysis Variables
+        self.bd_ana_year_var = tk.StringVar(value=str(datetime.now().year))
+        self.bd_ana_month_var = tk.StringVar(value="Whole Year")
+        self.bd_ana_level_var = tk.StringVar(value="Category")
+        self.bd_ana_cat_var = tk.StringVar()
+        self.bd_ana_sub_var = tk.StringVar()
+        
+        # --- INITIALIZE DATA STRUCTURES ---
+        self.categories = ["Household cost", "Car", "Health/Medicine", "Sadaka", "Fixed/contract",
+                           "Extra", "Entertainment", "Family Education", "Savings cost"]
+        self.subcategories = {}
         self.transactions = [] 
         self.income_sources = []
         self.investments = []
         self.investment_returns = []
-        self.investment_categories = []
         self.bd_balance = 0.0
-        self.bd_conversion_rate = 120.0
+        self.bd_conversion_rate = 140.0
         self.bd_transactions = [] 
 
-        # 4. Load your saved data
         self.load_data()
-
-        # 5. Now it is safe to create the UI
         self.create_widgets()
-        
-        # 6. Start auto-save
         self.auto_save()
-
-
         
     def load_data(self):
         if os.path.exists(self.data_file):
@@ -160,23 +167,21 @@ class FinanceManager:
             print(f"Auto-CSV Error: {e}")
 
     def update_subsubcategory_table(self):
-        """FIXED: Aggregates data for Sub-subcategories (Columns) vs Months (Rows)"""
+        #"""Sub-Subcategory View: Month rows vs Sub-Subcategories in Columns"""
         for item in self.subsub_tree.get_children():
             self.subsub_tree.delete(item)
-        
+
+        year = self.db_year_var.get()
         cat = self.subsub_filter_cat_var.get()
         sub = self.subsub_filter_sub_var.get()
-        year = self.db_year_var.get()
         
         if not cat or not sub:
+            messagebox.showwarning("Filter", "Please select Category and Subcategory")
             return
 
-        # 1. Get the list of sub-subcategories for these parents
-        # Our structure: subcategories[cat][sub] = [list of sub-subs]
+        # Get the sub-sub items list
         ss_list = self.subcategories.get(cat, {}).get(sub, [])
-        if not isinstance(ss_list, list): ss_list = []
         
-        # 2. Configure Columns
         columns = ['Month'] + ss_list + ['Total']
         self.subsub_tree['columns'] = columns
         self.subsub_tree['show'] = 'headings'
@@ -184,58 +189,26 @@ class FinanceManager:
         for col in columns:
             self.subsub_tree.heading(col, text=col)
             self.subsub_tree.column(col, width=100, anchor='center')
+        
+        # Clear existing rows using the correct name
+        for item in self.subsub_tree.get_children():
+            self.subsub_tree.delete(item)
 
-        # 3. Aggregate Data
-        # Format: matrix[month_index][sub_sub_name] = total_amount
+        # Calculate Matrix logic...
         matrix = defaultdict(lambda: defaultdict(float))
-        
-        # Combine both Euro and BD transactions (converted to Euro for this view)
-        # Or you can filter just for Euro transactions based on preference
-        all_exp = self.transactions # Standard Expenses
-        
-        for t in all_exp:
-            try:
-                t_date = t.get('date', '')
-                t_parts = t_date.split('/')
-                if len(t_parts) < 3: continue
-                
-                t_month = int(t_parts[1])
-                t_year = t_parts[2]
-                
-                # Filter by Category, Subcategory, and Year
-                if t_year == year and t.get('category') == cat and t.get('subcategory') == sub:
-                    ss_name = t.get('subsubcategory', '')
-                    if ss_name in ss_list:
-                        matrix[t_month][ss_name] += float(t.get('amount', 0))
-            except: continue
+        for t in self.transactions:
+            if t.get('date', '').endswith(year) and t.get('category') == cat and t.get('subcategory') == sub:
+                try:
+                    m_idx = int(t['date'].split('/')[1])
+                    ss = t.get('subsubcategory')
+                    if ss in ss_list:
+                        matrix[m_idx][ss] += float(t.get('amount', 0))
+                except: continue
 
-        # 4. Populate Rows (January to December)
-        grand_total = 0
-        col_totals = defaultdict(float)
+        # Render rows using the correct name
+        self._render_database_rows(self.subsub_tree, ss_list, matrix)
         
-        for m_idx in range(1, 13):
-            month_name = datetime(2000, m_idx, 1).strftime('%B')
-            row = [month_name]
-            row_sum = 0
-            
-            for ss in ss_list:
-                val = matrix[m_idx][ss]
-                row.append(f"{val:.2f}" if val > 0 else "0.00")
-                row_sum += val
-                col_totals[ss] += val
-            
-            row.append(f"{row_sum:.2f}")
-            grand_total += row_sum
-            self.subsub_tree.insert('', 'end', values=row)
-
-        # 5. Add Total Row
-        footer_total = ["TOTAL"]
-        for ss in ss_list:
-            footer_total.append(f"{col_totals[ss]:.2f}")
-        footer_total.append(f"{grand_total:.2f}")
-        self.subsub_tree.insert('', 'end', values=footer_total, tags=('total',))
-        
-        self.subsub_tree.tag_configure('total', background='#d0e0ff', font=('Arial', 10, 'bold'))
+    
     
     def auto_save(self):
         self.save_data()
@@ -964,7 +937,6 @@ class FinanceManager:
     # --- Database Section ---
     def create_database_tab(self):
         # --- MAIN SCROLLABLE AREA ---
-        # This canvas allows you to scroll UP and DOWN
         self.db_canvas = tk.Canvas(self.database_tab)
         v_scroll_main = ttk.Scrollbar(self.database_tab, orient="vertical", command=self.db_canvas.yview)
         self.db_scroll_frame = ttk.Frame(self.db_canvas)
@@ -980,99 +952,204 @@ class FinanceManager:
         v_scroll_main.pack(side="right", fill="y")
         self.db_canvas.pack(side="left", fill="both", expand=True)
 
-        # 1. Global Year Filter
-        y_f = ttk.LabelFrame(self.db_scroll_frame, text="Select Year", padding=10)
-        y_f.pack(fill='x', padx=10, pady=5)
-        self.db_year_var = tk.StringVar(value=str(datetime.now().year))
-        ttk.Combobox(y_f, textvariable=self.db_year_var, values=[str(y) for y in range(2020, 2031)], width=10).pack(side='left')
+        # ---------------------------------------------------------
+        # TOP SECTION: FILTERS & CSV DATABASE OPERATIONS
+        # ---------------------------------------------------------
+        top_frame = ttk.LabelFrame(self.db_scroll_frame, text="Global Controls & CSV Database", padding=10)
+        top_frame.pack(fill='x', padx=10, pady=5)
+        
+        # Year Filter
+        filter_f = ttk.Frame(top_frame)
+        filter_f.pack(side='left')
+        ttk.Label(filter_f, text="Select Year:").pack(side='left', padx=5)
+        ttk.Combobox(filter_f, textvariable=self.db_year_var, values=[str(y) for y in range(2020, 2031)], width=10).pack(side='left')
+
+        ttk.Separator(top_frame, orient='vertical').pack(side='left', fill='y', padx=20)
+
+        # NEW CSV DATABASE BUTTONS
+        ttk.Button(top_frame, text="Save Database to CSV", 
+                   command=self.export_csv_comprehensive).pack(side='left', padx=5)
+        ttk.Button(top_frame, text="Load Database from CSV", 
+                   command=self.import_csv_comprehensive).pack(side='left', padx=5)
 
         # ---------------------------------------------------------
-        # SECTION 1: CATEGORY TABLE (The Fix)
+        # SECTION 1: CATEGORY TABLE
         # ---------------------------------------------------------
-        s1 = ttk.LabelFrame(self.db_scroll_frame, text="1. Category Overview", padding=10)
+        s1 = ttk.LabelFrame(self.db_scroll_frame, text="1. Category Overview (Year Filter)", padding=10)
         s1.pack(fill='x', padx=10, pady=10)
-        
         ttk.Button(s1, text="Refresh Category Table", command=self.update_category_table).pack(anchor='w', pady=5)
 
-        # Table Container using GRID for perfect scrollbar alignment
         t1_container = ttk.Frame(s1)
         t1_container.pack(fill='x', expand=True)
-
-        # Create Treeview
-        self.cat_tree = ttk.Treeview(t1_container, show='headings', height=14)
-        
-        # Horizontal Scrollbar
+        self.cat_tree = ttk.Treeview(t1_container, show='headings', height=13)
         h_scroll1 = ttk.Scrollbar(t1_container, orient="horizontal", command=self.cat_tree.xview)
         self.cat_tree.configure(xscrollcommand=h_scroll1.set)
-
-        # Place using Grid
         self.cat_tree.grid(row=0, column=0, sticky='nsew')
         h_scroll1.grid(row=1, column=0, sticky='ew')
-        
         t1_container.grid_columnconfigure(0, weight=1)
-
-
 
         # ---------------------------------------------------------
         # SECTION 2: SUBCATEGORY TABLE
         # ---------------------------------------------------------
+        
+        
+        # SECTION 2: SUBCATEGORY TABLE
         s2 = ttk.LabelFrame(self.db_scroll_frame, text="2. Subcategory Overview", padding=10)
         s2.pack(fill='x', padx=10, pady=10)
-
         f2 = ttk.Frame(s2)
         f2.pack(fill='x', pady=5)
-        ttk.Label(f2, text="Category:").pack(side='left')
-        self.subcat_filter_cat_var = tk.StringVar()
-        self.subcat_filter_cat_combo = ttk.Combobox(f2, textvariable=self.subcat_filter_cat_var, values=self.categories)
+        ttk.Label(f2, text="Select Category:").pack(side='left')
+        
+        # Note: Do NOT define self.subcat_filter_cat_var here anymore!
+        self.subcat_filter_cat_combo = ttk.Combobox(f2, textvariable=self.subcat_filter_cat_var, 
+                                                   values=self.categories, state="readonly")
         self.subcat_filter_cat_combo.pack(side='left', padx=5)
         ttk.Button(f2, text="Update Table", command=self.update_subcategory_table).pack(side='left')
+        
+        #self.subcat_filter_cat_combo = ttk.Combobox(f2, textvariable=self.subcat_filter_cat_var, values=self.categories)
+        # self.subcat_filter_cat_combo.pack(side='left', padx=5)
+        # ttk.Button(f2, text="Update Table", command=self.update_subcategory_table).pack(side='left')
 
         t2_frame = ttk.Frame(s2)
         t2_frame.pack(fill='x', expand=True)
-
-        self.subcat_tree = ttk.Treeview(t2_frame, show='headings', height=12)
+        self.subcat_tree = ttk.Treeview(t2_frame, show='headings', height=13)
         h_scroll2 = ttk.Scrollbar(t2_frame, orient="horizontal", command=self.subcat_tree.xview)
         self.subcat_tree.configure(xscrollcommand=h_scroll2.set)
-
-        self.subcat_tree.pack(fill='x')
-        h_scroll2.pack(fill='x')
+        self.subcat_tree.grid(row=0, column=0, sticky='nsew')
+        h_scroll2.grid(row=1, column=0, sticky='ew')
+        t2_frame.grid_columnconfigure(0, weight=1)
 
         # ---------------------------------------------------------
         # SECTION 3: SUB-SUBCATEGORY TABLE
         # ---------------------------------------------------------
-        s3 = ttk.LabelFrame(self.db_scroll_frame, text="3. Sub-Subcategory Overview", padding=10)
+        s3 = ttk.LabelFrame(self.db_scroll_frame, text="3. Sub-Subcategory Overview (Year + Cat + Sub)", padding=10)
         s3.pack(fill='x', padx=10, pady=10)
 
         f3 = ttk.Frame(s3)
         f3.pack(fill='x', pady=5)
+
+        # 1. Category Filter for Sub-Sub
         ttk.Label(f3, text="Category:").pack(side='left')
-        self.db_subsub_cat_var = tk.StringVar()
-        self.db_subsub_cat_combo = ttk.Combobox(f3, textvariable=self.db_subsub_cat_var, values=self.categories)
+        self.db_subsub_cat_combo = ttk.Combobox(f3, textvariable=self.subsub_filter_cat_var, 
+                                               values=self.categories, state="readonly", width=20)
         self.db_subsub_cat_combo.pack(side='left', padx=5)
+        # BINDING: When Category changes, update the Subcategory list
         self.db_subsub_cat_combo.bind('<<ComboboxSelected>>', self.sync_db_subsub_filters)
 
+        # 2. Subcategory Filter for Sub-Sub
         ttk.Label(f3, text="Subcategory:").pack(side='left', padx=5)
-        self.db_subsub_sub_var = tk.StringVar()
-        self.db_subsub_sub_combo = ttk.Combobox(f3, textvariable=self.db_subsub_sub_var)
+        self.db_subsub_sub_combo = ttk.Combobox(f3, textvariable=self.subsub_filter_sub_var, 
+                                               state="readonly", width=20)
         self.db_subsub_sub_combo.pack(side='left', padx=5)
-        ttk.Button(f3, text="Update Table", command=self.update_subsubcategory_table).pack(side='left', padx=5)
 
+        # 3. Update Button
+        ttk.Button(f3, text="Update Sub-Sub Table", command=self.update_subsubcategory_table).pack(side='left', padx=10)
+
+        # 4. Table Container
         t3_frame = ttk.Frame(s3)
         t3_frame.pack(fill='x', expand=True)
-
         self.subsub_tree = ttk.Treeview(t3_frame, show='headings', height=12)
         h_scroll3 = ttk.Scrollbar(t3_frame, orient="horizontal", command=self.subsub_tree.xview)
         self.subsub_tree.configure(xscrollcommand=h_scroll3.set)
-
         self.subsub_tree.pack(fill='x')
         h_scroll3.pack(fill='x')
+        
+    
+    def export_csv_comprehensive(self):
+        """Exports all financial records (Euro, BD, Income, Investments) into one CSV file"""
+        filename = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv")],
+            initialfilename=f"finance_db_backup_{datetime.now().strftime('%Y%m%d')}.csv"
+        )
+        if not filename: return
+
+        try:
+            with open(filename, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                # Standardized Header
+                writer.writerow(['Date', 'Type', 'Category', 'Subcategory', 'Sub-Subcategory', 'Amount', 'Currency', 'Details'])
+                
+                # 1. Euro Expenses
+                for t in self.transactions:
+                    writer.writerow([t.get('date'), 'Euro Expense', t.get('category'), t.get('subcategory'), 
+                                     t.get('subsubcategory'), t.get('amount'), 'EUR', t.get('location')])
+                
+                # 2. BD Expenses
+                for t in self.bd_transactions:
+                    writer.writerow([t.get('date'), 'BD Expense', t.get('category'), t.get('subcategory'), 
+                                     t.get('subsubcategory'), t.get('amount'), 'BDT', ''])
+
+                # 3. Income
+                for i in self.income_sources:
+                    writer.writerow([i.get('date'), 'Income', 'Income', i.get('source'), '', i.get('amount'), 'EUR', ''])
+
+                # 4. Investments
+                for inv in self.investments:
+                    writer.writerow([inv.get('date'), 'Investment', inv.get('category'), '', '', 
+                                     inv.get('amount'), 'EUR', inv.get('description')])
+
+                # 5. Returns
+                for ret in self.investment_returns:
+                    writer.writerow([ret.get('date'), 'Return', ret.get('category'), '', '', 
+                                     ret.get('amount'), 'EUR', ret.get('type')])
+
+            messagebox.showinfo("Success", "Full database exported to CSV successfully.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export: {e}")
+
+    def import_csv_comprehensive(self):
+        """Imports data from a comprehensive CSV and replaces current memory (Confirmation Required)"""
+        filename = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
+        if not filename: return
+
+        if not messagebox.askyesno("Confirm Load", "This will merge CSV data with current data. Continue?"):
+            return
+
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    etype = row['Type']
+                    data = {
+                        'date': row['Date'],
+                        'amount': float(row['Amount']),
+                        'category': row['Category'],
+                        'subcategory': row['Subcategory'],
+                        'subsubcategory': row['Sub-Subcategory']
+                    }
+
+                    if etype == 'Euro Expense':
+                        data['location'] = row['Details']
+                        data['type'] = 'expense'
+                        self.transactions.append(data)
+                    elif etype == 'BD Expense':
+                        self.bd_transactions.append(data)
+                    elif etype == 'Income':
+                        self.income_sources.append({'date': data['date'], 'amount': data['amount'], 'source': data['subcategory']})
+                    elif etype == 'Investment':
+                        self.investments.append({'date': data['date'], 'amount': data['amount'], 'category': data['category'], 'description': row['Details']})
+                    elif etype == 'Return':
+                        self.investment_returns.append({'date': data['date'], 'amount': data['amount'], 'category': data['category'], 'type': row['Details']})
+
+            self.save_data() # Persist to JSON
+            messagebox.showinfo("Success", "Database loaded and merged from CSV. All tables updated.")
+            self.update_category_table()
+            self.update_input_summary_table()
+            if hasattr(self, 'update_investment_display'): self.update_investment_display()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to import: {e}. Ensure CSV format is correct.")
 
     def sync_db_subsub_filters(self, event=None):
-        cat = self.db_subsub_cat_var.get()
+        """Updates the Subcategory dropdown based on Category in Section 3"""
+        cat = self.subsub_filter_cat_var.get()
         if cat in self.subcategories:
+            # Get the keys (Subcategories) from your nested dictionary
             subs = list(self.subcategories[cat].keys())
             self.db_subsub_sub_combo['values'] = subs
-            self.db_subsub_sub_var.set('')
+            # Clear the subcategory variable so user has to pick a new one
+            self.subsub_filter_sub_var.set('')
         
     
             
