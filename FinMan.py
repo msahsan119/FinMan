@@ -20,6 +20,7 @@ class FinanceManager:
         self.root.geometry("1500x950")
         
         self.data_file = "finance_data.json"
+        self.initial_euro_balance = 0.0  # Add this line
         
         # --- INITIALIZE ALL TKINTER VARIABLES FIRST ---
         # Database Tab Variables (Matching your function logic)
@@ -76,6 +77,7 @@ class FinanceManager:
                     self.bd_balance = data.get('bd_balance', 0.0)
                     self.bd_conversion_rate = data.get('bd_conversion_rate', 140.0)
                     self.bd_transactions = data.get('bd_transactions', [])
+                    self.initial_euro_balance = data.get('initial_euro_balance', 0.0)
                     
                     # Ensure transactions have subsubcategory field for legacy data
                     for t in self.transactions:
@@ -86,23 +88,7 @@ class FinanceManager:
             except Exception as e:
                 print(f"Load error: {e}")
                 pass
-    def save_data2(self):
-        # Save JSON
-        data = {
-            'categories': self.categories, 'subcategories': self.subcategories,
-            'transactions': self.transactions, 'income_sources': self.income_sources,
-            'investments': self.investments, 'investment_returns': self.investment_returns,
-            'investment_categories': self.investment_categories, 'bd_balance': self.bd_balance,
-            'bd_conversion_rate': self.bd_conversion_rate, 'bd_transactions': self.bd_transactions 
-        }
-        with open(self.data_file, 'w') as f:
-            json.dump(data, f, indent=2)
-        
-        # EXPORT CSV AUTOMATICALLY
-        self.export_csv_silent()
-        
-        # REFRESH MATRIX
-        self.update_input_summary_table()
+
 
     
     
@@ -112,7 +98,8 @@ class FinanceManager:
             'transactions': self.transactions, 'income_sources': self.income_sources,
             'investments': self.investments, 'investment_returns': self.investment_returns,
             'investment_categories': self.investment_categories, 'bd_balance': self.bd_balance,
-            'bd_conversion_rate': self.bd_conversion_rate, 'bd_transactions': self.bd_transactions 
+            'bd_conversion_rate': self.bd_conversion_rate, 'bd_transactions': self.bd_transactions, 
+            'initial_euro_balance': self.initial_euro_balance,
         }
         with open(self.data_file, 'w') as f:
             json.dump(data, f, indent=2)
@@ -122,6 +109,7 @@ class FinanceManager:
         self.update_input_summary_table() # This updates the Matrix
         if hasattr(self, 'bd_taka_label'): 
             self.update_bd_display()      # This updates the BD Tab
+        
 
     def export_to_csv_auto(self):
         """Automatically saves all transactions to CSV file"""
@@ -243,7 +231,16 @@ class FinanceManager:
         self.notebook.add(self.analysis_tab, text="Analysis")
         self.create_analysis_tab() # RESTORED
         
-     
+    def set_initial_balance(self):
+        try:
+            val = float(self.initial_bal_entry.get())
+            self.initial_euro_balance = val
+            self.save_data()
+            self.update_input_summary_table()
+            messagebox.showinfo("Success", f"Initial balance set to €{val:.2f}")
+        except ValueError:
+            messagebox.showerror("Error", "Please enter a valid number for initial balance.")
+            
     def create_input_tab(self):
         # Header
         header_frame = ttk.Frame(self.input_tab, height=150) 
@@ -343,6 +340,17 @@ class FinanceManager:
                                                      font=('Arial', 11, 'bold'))
         self.current_month_income_label.grid(row=4, column=0, columnspan=2, pady=5)
         
+        # Add these lines at the bottom of the income_frame (around line 430)
+        ttk.Separator(income_frame, orient='horizontal').grid(row=5, column=0, columnspan=2, sticky='ew', pady=10)
+        
+        ttk.Label(income_frame, text="Set Initial Balance (€):").grid(row=6, column=0, sticky='w', pady=2)
+        self.initial_bal_entry = ttk.Entry(income_frame)
+        self.initial_bal_entry.insert(0, str(self.initial_euro_balance))
+        self.initial_bal_entry.grid(row=6, column=1, sticky='ew', pady=2, padx=5)
+        
+        ttk.Button(income_frame, text="Update Initial Balance", 
+                   command=self.set_initial_balance).grid(row=7, column=0, columnspan=2, pady=5)
+        
         # Expenditure Section
         expense_frame = ttk.LabelFrame(forms_container, text="Add Expenditure", padding=10)
         expense_frame.pack(side='left', fill='both', expand=True, padx=5)
@@ -417,6 +425,8 @@ class FinanceManager:
         self.update_category_combos()
         self.update_current_month_income()
         self.update_input_summary_table()
+        
+        
 
     # --- Defensive Updates to prevent Crash ---
     def update_subcategory_combo(self, event=None):
@@ -535,14 +545,28 @@ class FinanceManager:
             totals['balance'] += month_balance
 
         # --- 3. Final Footer Rows ---
+        # Inside update_input_summary_table, locate the totals['balance'] part
+        # Change the TOTAL row insertion to:
+        
+        total_bal_with_initial = totals['balance'] + self.initial_euro_balance
+        
         self.summary_tree.insert('', 'end', values=(
             "TOTAL", 
             f"{totals['income']:.2f}", 
             f"{totals['expense']:.2f}",
             f"{totals['net_invest']:.2f}", 
             f"{totals['bd_expense']:.0f}",
-            f"{totals['balance']:.2f}"
+            f"{total_bal_with_initial:.2f}" # This now includes the starting money
         ), tags=('summary',))
+        
+        # self.summary_tree.insert('', 'end', values=(
+        #     "TOTAL", 
+        #     f"{totals['income']:.2f}", 
+        #     f"{totals['expense']:.2f}",
+        #     f"{totals['net_invest']:.2f}", 
+        #     f"{totals['bd_expense']:.0f}",
+        #     f"{totals['balance']:.2f}"
+        # ), tags=('summary',))
 
         self.summary_tree.insert('', 'end', values=(
             "AVERAGE", 
@@ -2267,7 +2291,7 @@ class FinanceManager:
         ttk.Label(return_frame, text="Type:").grid(row=3, column=0, sticky='w', pady=2)
         self.return_type_var = tk.StringVar(value="Profit")
         return_type_combo = ttk.Combobox(return_frame, textvariable=self.return_type_var,
-                                        values=["Profit", "Dividend", "Capital Gain"], width=23, state="readonly")
+                                        values=["Profit", "Return"], width=23, state="readonly")
         return_type_combo.grid(row=3, column=1, sticky='ew', pady=2, padx=5)
         
         ttk.Button(return_frame, text="Add Return/Profit", command=self.add_return).grid(row=4, column=0, columnspan=2, pady=10)
