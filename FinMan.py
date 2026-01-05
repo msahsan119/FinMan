@@ -20,29 +20,40 @@ class FinanceManager:
         self.root.geometry("1500x950")
         
         self.data_file = "finance_data.json"
-        self.initial_euro_balance = 0.0  # Add this line
+        self.initial_euro_balance = 0.0
         
-        # --- INITIALIZE ALL TKINTER VARIABLES FIRST ---
-        # Database Tab Variables (Matching your function logic)
+        # --- 1. INITIALIZE EVERY TKINTER VARIABLE FIRST (CRITICAL) ---
+        
+        # Database Tab Variables
         self.db_year_var = tk.StringVar(value=str(datetime.now().year))
         self.subcat_filter_cat_var = tk.StringVar()
-        self.subsub_filter_cat_var = tk.StringVar()  # Fixed name
-        self.subsub_filter_sub_var = tk.StringVar()  # Fixed name
+        self.subsub_filter_cat_var = tk.StringVar()
+        self.subsub_filter_sub_var = tk.StringVar()
         
-        # Analysis Tab Variables
+        # Analysis Tab (Euro) Variables
         self.analysis_year_var = tk.StringVar(value=str(datetime.now().year))
         self.analysis_month_var = tk.StringVar(value="Whole Year")
         self.analysis_cat_var = tk.StringVar()
         self.analysis_sub_var = tk.StringVar()
 
-        # BD Section Analysis Variables
+        # BD Section Main Filter Variables
+        self.bd_db_year_var = tk.StringVar(value=str(datetime.now().year))
+        self.bd_subcat_filter_cat = tk.StringVar()
+        self.bd_subsubcat_filter_cat = tk.StringVar()
+        self.bd_subsubcat_filter_sub = tk.StringVar()
+        
+        # BD Section Analysis Tab Variables
         self.bd_ana_year_var = tk.StringVar(value=str(datetime.now().year))
         self.bd_ana_month_var = tk.StringVar(value="Whole Year")
         self.bd_ana_level_var = tk.StringVar(value="Category")
         self.bd_ana_cat_var = tk.StringVar()
         self.bd_ana_sub_var = tk.StringVar()
+
+        # Hierarchy Manager Variables (FIX: ADDED THESE)
+        self.mgr_cat_var = tk.StringVar()
+        self.mgr_sub_var = tk.StringVar()
         
-        # --- INITIALIZE DATA STRUCTURES ---
+        # --- 2. INITIALIZE DATA STRUCTURES ---
         self.categories = ["Household cost", "Car", "Health/Medicine", "Sadaka", "Fixed/contract",
                            "Extra", "Entertainment", "Family Education", "Savings cost"]
         self.subcategories = {}
@@ -50,10 +61,12 @@ class FinanceManager:
         self.income_sources = []
         self.investments = []
         self.investment_returns = []
+        self.investment_categories = []
         self.bd_balance = 0.0
         self.bd_conversion_rate = 140.0
         self.bd_transactions = [] 
 
+        # --- 3. LOAD DATA AND BUILD UI ---
         self.load_data()
         self.create_widgets()
         self.auto_save()
@@ -584,140 +597,170 @@ class FinanceManager:
 
     # --- Helper Methods (Input) ---
 
-    
     def manage_subcategories(self):
-        """Hierarchy Manager with Edit/Rename functionality"""
+        """Hierarchy Manager with full Rename and Delete functionality for all 3 levels"""
         dialog = tk.Toplevel(self.root)
         dialog.title("Edit & Manage Hierarchy")
-        dialog.geometry("1000x650")
+        dialog.geometry("1100x650")
         dialog.grab_set()
         
         main_frame = ttk.Frame(dialog, padding=10)
         main_frame.pack(fill='both', expand=True)
         
-        # --- LEFT: CATEGORY & SUBCATEGORY ---
-        left_panel = ttk.LabelFrame(main_frame, text="1. Categories & Subcategories", padding=10)
+        # --- LEFT: CATEGORY & SUBCATEGORY MANAGEMENT ---
+        left_panel = ttk.LabelFrame(main_frame, text="1. Main Categories & Subcategories", padding=10)
         left_panel.pack(side='left', fill='y', padx=5)
         
-        # Category Section
-        ttk.Label(left_panel, text="Main Category:").pack(anchor='w')
-        cat_select_frame = ttk.Frame(left_panel)
-        cat_select_frame.pack(fill='x', pady=2)
+        # Category Controls
+        ttk.Label(left_panel, text="Select Main Category:").pack(anchor='w')
+        cat_row = ttk.Frame(left_panel)
+        cat_row.pack(fill='x', pady=2)
         
-        self.mgr_cat_var = tk.StringVar()
-        self.mgr_cat_combo = ttk.Combobox(cat_select_frame, textvariable=self.mgr_cat_var, values=self.categories, state="readonly")
+        self.mgr_cat_combo = ttk.Combobox(cat_row, textvariable=self.mgr_cat_var, values=self.categories, state="readonly")
         self.mgr_cat_combo.pack(side='left', fill='x', expand=True)
-        ttk.Button(cat_select_frame, text="✎", width=3, command=self.rename_category).pack(side='right', padx=2)
-        
+        ttk.Button(cat_row, text="✎", width=3, command=self.rename_category).pack(side='left', padx=2)
+        ttk.Button(cat_row, text="❌", width=3, command=self.delete_category).pack(side='left', padx=2)
         self.mgr_cat_combo.bind("<<ComboboxSelected>>", self.mgr_update_subs)
         
         ttk.Separator(left_panel, orient='horizontal').pack(fill='x', pady=15)
         
-        # Subcategory Section
-        ttk.Label(left_panel, text="Subcategory:").pack(anchor='w')
-        sub_select_frame = ttk.Frame(left_panel)
-        sub_select_frame.pack(fill='x', pady=2)
+        # Subcategory Controls
+        ttk.Label(left_panel, text="Select Subcategory:").pack(anchor='w')
+        sub_row = ttk.Frame(left_panel)
+        sub_row.pack(fill='x', pady=2)
         
-        self.mgr_sub_var = tk.StringVar()
-        self.mgr_sub_combo = ttk.Combobox(sub_select_frame, textvariable=self.mgr_sub_var, state="readonly")
+        self.mgr_sub_combo = ttk.Combobox(sub_row, textvariable=self.mgr_sub_var, state="readonly")
         self.mgr_sub_combo.pack(side='left', fill='x', expand=True)
-        ttk.Button(sub_select_frame, text="✎", width=3, command=self.rename_subcategory).pack(side='right', padx=2)
-        
+        ttk.Button(sub_row, text="✎", width=3, command=self.rename_subcategory).pack(side='left', padx=2)
+        ttk.Button(sub_row, text="❌", width=3, command=self.delete_subcategory).pack(side='left', padx=2)
         self.mgr_sub_combo.bind("<<ComboboxSelected>>", self.refresh_mgr_list)
 
-        ttk.Label(left_panel, text="Add New Subcategory:").pack(anchor='w', pady=(15,0))
+        # Add New Subcategory
+        ttk.Label(left_panel, text="Add New Subcategory:", font=('', 9, 'italic')).pack(anchor='w', pady=(15,0))
         self.new_sub_entry = ttk.Entry(left_panel)
         self.new_sub_entry.pack(fill='x', pady=5)
-        ttk.Button(left_panel, text="+ Add Subcategory", command=self.mgr_add_subcategory).pack(fill='x')
+        ttk.Button(left_panel, text="+ Create Subcategory", command=self.mgr_add_subcategory).pack(fill='x')
 
-        # --- RIGHT: SUB-SUBCATEGORY ---
+        # --- RIGHT: SUB-SUBCATEGORY MANAGEMENT ---
         right_panel = ttk.LabelFrame(main_frame, text="2. Sub-Subcategories", padding=10)
         right_panel.pack(side='left', fill='both', expand=True, padx=5)
         
         add_ss_frame = ttk.Frame(right_panel)
         add_ss_frame.pack(fill='x', pady=5)
-        
         self.new_subsub_entry = ttk.Entry(add_ss_frame)
         self.new_subsub_entry.pack(side='left', fill='x', expand=True, padx=5)
-        ttk.Button(add_ss_frame, text="+ Add Sub-Sub", command=self.mgr_add_sub_subcategory).pack(side='right')
+        ttk.Button(add_ss_frame, text="+ Add Item", command=self.mgr_add_sub_subcategory).pack(side='right')
 
-        # Treeview for Sub-subcategories
         self.mgr_tree = ttk.Treeview(right_panel, columns=('Name'), show='headings')
-        self.mgr_tree.heading('Name', text='Current Items')
+        self.mgr_tree.heading('Name', text='Current Sub-Subcategory Items')
         self.mgr_tree.pack(fill='both', expand=True, pady=5)
         
-        # Edit/Delete Sub-sub Buttons
         btn_ss_frame = ttk.Frame(right_panel)
         btn_ss_frame.pack(fill='x')
-        ttk.Button(btn_ss_frame, text="Rename Selected Item", command=self.rename_subsubcategory).pack(side='left', padx=5)
+        ttk.Button(btn_ss_frame, text="Rename Selected", command=self.rename_subsubcategory).pack(side='left', padx=5)
+        ttk.Button(btn_ss_frame, text="Delete Selected", command=self.delete_subsubcategory).pack(side='left', padx=5)
         
-        # Initial Refresh
         if self.categories:
             self.mgr_cat_combo.current(0)
             self.mgr_update_subs()
-            
+
+    
+    def propagate_name_change(self, level, old_val, new_val, parent_cat=None, parent_sub=None):
+        """Standard helper to ensure existing database records match new names"""
+        count = 0
+        all_lists = [self.transactions, self.bd_transactions]
+        for t_list in all_lists:
+            for t in t_list:
+                if level == 'category' and t.get('category') == old_val:
+                    t['category'] = new_val
+                    count += 1
+                elif level == 'subcategory' and t.get('category') == parent_cat and t.get('subcategory') == old_val:
+                    t['subcategory'] = new_val
+                    count += 1
+                elif level == 'subsubcategory' and t.get('category') == parent_cat and t.get('subcategory') == parent_sub and t.get('subsubcategory') == old_val:
+                    t['subsubcategory'] = new_val
+                    count += 1
+        return count
+
+    # --- CATEGORY ACTIONS ---
     def rename_category(self):
         old_name = self.mgr_cat_var.get()
         if not old_name: return
-        
-        new_name = simpledialog.askstring("Rename Category", f"Rename '{old_name}' to:", initialvalue=old_name)
+        new_name = simpledialog.askstring("Rename", f"Rename Category '{old_name}' to:", initialvalue=old_name)
         if new_name and new_name != old_name:
-            # 1. Update master list
             idx = self.categories.index(old_name)
             self.categories[idx] = new_name
-            
-            # 2. Update subcategories dict keys
             self.subcategories[new_name] = self.subcategories.pop(old_name)
-            
-            # 3. Propagate to transactions
-            count = self.propagate_name_change(level='category', old_val=old_name, new_val=new_name)
-            
+            self.propagate_name_change('category', old_name, new_name)
             self.save_data()
             self.mgr_cat_combo['values'] = self.categories
             self.mgr_cat_var.set(new_name)
-            self.update_category_combos() # Refresh main UI
-            messagebox.showinfo("Success", f"Renamed to {new_name}. {count} transactions updated.")
+            self.update_category_combos()
+            messagebox.showinfo("Success", "Category renamed throughout database.")
 
+    def delete_category(self):
+        cat = self.mgr_cat_var.get()
+        if not cat or not messagebox.askyesno("Confirm", f"Delete '{cat}' and ALL its transaction history?"): return
+        self.categories.remove(cat)
+        self.subcategories.pop(cat, None)
+        self.transactions = [t for t in self.transactions if t.get('category') != cat]
+        self.bd_transactions = [t for t in self.bd_transactions if t.get('category') != cat]
+        self.save_data()
+        self.mgr_cat_combo['values'] = self.categories
+        self.mgr_cat_var.set('')
+        self.mgr_update_subs()
+
+    # --- SUBCATEGORY ACTIONS ---
     def rename_subcategory(self):
         cat = self.mgr_cat_var.get()
-        old_name = self.mgr_sub_var.get()
-        if not cat or not old_name: return
-        
-        new_name = simpledialog.askstring("Rename Subcategory", f"Rename '{old_name}' to:", initialvalue=old_name)
-        if new_name and new_name != old_name:
-            # 1. Update dict key
-            self.subcategories[cat][new_name] = self.subcategories[cat].pop(old_name)
-            
-            # 2. Propagate to transactions
-            count = self.propagate_name_change(level='subcategory', old_val=old_name, new_val=new_name, parent_cat=cat)
-            
+        old_sub = self.mgr_sub_var.get()
+        if not cat or not old_sub: return
+        new_sub = simpledialog.askstring("Rename", f"Rename Subcategory '{old_sub}' to:", initialvalue=old_sub)
+        if new_sub and new_sub != old_sub:
+            self.subcategories[cat][new_sub] = self.subcategories[cat].pop(old_sub)
+            self.propagate_name_change('subcategory', old_sub, new_sub, parent_cat=cat)
             self.save_data()
             self.mgr_update_subs()
-            self.mgr_sub_var.set(new_name)
-            messagebox.showinfo("Success", f"Renamed to {new_name}. {count} transactions updated.")
+            self.mgr_sub_var.set(new_sub)
 
-    def rename_subsubcategory(self):
-        selection = self.mgr_tree.selection()
-        if not selection: 
-            messagebox.showwarning("Selection", "Please select an item in the list first.")
-            return
-            
+    def delete_subcategory(self):
         cat = self.mgr_cat_var.get()
         sub = self.mgr_sub_var.get()
-        old_name = self.mgr_tree.item(selection[0])['values'][0]
-        
-        new_name = simpledialog.askstring("Rename Sub-Sub", f"Rename '{old_name}' to:", initialvalue=old_name)
-        if new_name and new_name != old_name:
-            # 1. Update list
-            idx = self.subcategories[cat][sub].index(old_name)
-            self.subcategories[cat][sub][idx] = new_name
-            
-            # 2. Propagate
-            count = self.propagate_name_change(level='subsubcategory', old_val=old_name, new_val=new_name, parent_cat=cat, parent_sub=sub)
-            
+        if not cat or not sub or not messagebox.askyesno("Confirm", f"Delete Subcategory '{sub}'?"): return
+        self.subcategories[cat].pop(sub, None)
+        self.transactions = [t for t in self.transactions if not (t.get('category') == cat and t.get('subcategory') == sub)]
+        self.bd_transactions = [t for t in self.bd_transactions if not (t.get('category') == cat and t.get('subcategory') == sub)]
+        self.save_data()
+        self.mgr_update_subs()
+
+    # --- SUB-SUBCATEGORY ACTIONS ---
+    def rename_subsubcategory(self):
+        selection = self.mgr_tree.selection()
+        if not selection: return
+        old_val = self.mgr_tree.item(selection[0])['values'][0]
+        cat, sub = self.mgr_cat_var.get(), self.mgr_sub_var.get()
+        new_val = simpledialog.askstring("Rename", f"Rename '{old_val}' to:", initialvalue=old_val)
+        if new_val and new_val != old_val:
+            idx = self.subcategories[cat][sub].index(old_val)
+            self.subcategories[cat][sub][idx] = new_val
+            self.propagate_name_change('subsubcategory', old_val, new_val, parent_cat=cat, parent_sub=sub)
             self.save_data()
             self.refresh_mgr_list()
-            messagebox.showinfo("Success", f"Renamed to {new_name}. {count} transactions updated.")
+
+    def delete_subsubcategory(self):
+        selection = self.mgr_tree.selection()
+        if not selection: return
+        val = self.mgr_tree.item(selection[0])['values'][0]
+        cat, sub = self.mgr_cat_var.get(), self.mgr_sub_var.get()
+        if messagebox.askyesno("Confirm", f"Delete item '{val}'?"):
+            self.subcategories[cat][sub].remove(val)
+            self.transactions = [t for t in self.transactions if not (t.get('category')==cat and t.get('subcategory')==sub and t.get('subsubcategory')==val)]
+            self.bd_transactions = [t for t in self.bd_transactions if not (t.get('category')==cat and t.get('subcategory')==sub and t.get('subsubcategory')==val)]
+            self.save_data()
+            self.refresh_mgr_list()
+            
+    
+
 
     def rename_item(self, level):
         cat = self.mgr_cat_var.get()
@@ -740,7 +783,7 @@ class FinanceManager:
         self.save_data()
         messagebox.showinfo("Success", "Renamed successfully!")
         
-    def propagate_name_change(self, level, old_val, new_val, parent_cat=None, parent_sub=None):
+    def propagate_name_change2(self, level, old_val, new_val, parent_cat=None, parent_sub=None):
         """Helper to ensure existing database records match new names"""
         count = 0
         # Check both standard and BD transactions
@@ -959,6 +1002,8 @@ class FinanceManager:
         canvas.create_oval(cx-5, cy-5, cx+5, cy+5, fill='#1B5E20')
 
     # --- Database Section ---
+    
+        
     def create_database_tab(self):
         # --- MAIN SCROLLABLE AREA ---
         self.db_canvas = tk.Canvas(self.database_tab)
@@ -1211,6 +1256,8 @@ class FinanceManager:
                 except: continue
         
         self._render_database_rows(self.cat_tree, cols_to_show, matrix)
+    
+    
 
     def _render_database_rows(self, tree, col_items, matrix):
         """Universal Rendering for Euro and BD Tabs. Forces ALL columns to show."""
@@ -1267,6 +1314,8 @@ class FinanceManager:
 
         subs = list(self.subcategories.get(cat, {}).keys())
         matrix = defaultdict(lambda: defaultdict(float))
+        
+
         
         for t in self.transactions:
             if t.get('date', '').endswith(year) and t.get('category') == cat:
@@ -1597,75 +1646,91 @@ class FinanceManager:
 
     # Fix for create_bd_subcategories_view method
     def create_bd_subcategories_view(self, parent_frame):
-        # Filter
+        # 1. Filter Section (Top)
         filter_frame = ttk.LabelFrame(parent_frame, text="Filters", padding=5)
-        filter_frame.pack(fill='x', pady=5)
+        filter_frame.pack(fill='x', pady=5, padx=10)
         
         ttk.Label(filter_frame, text="Category:").pack(side='left')
         self.bd_subcat_filter_cat = tk.StringVar()
-        bd_subcat_combo = ttk.Combobox(filter_frame, textvariable=self.bd_subcat_filter_cat, values=self.categories, width=20)
+        bd_subcat_combo = ttk.Combobox(filter_frame, textvariable=self.bd_subcat_filter_cat, values=self.categories, width=20, state="readonly")
         bd_subcat_combo.pack(side='left', padx=5)
-        bd_subcat_combo.bind('<<ComboboxSelected>>', lambda e: self.update_bd_subcategories_table(parent_frame))
         
-        ttk.Button(filter_frame, text="Update", command=lambda: self.update_bd_subcategories_table(parent_frame)).pack(side='left', padx=10)
+        # Updated command to point directly to logic
+        ttk.Button(filter_frame, text="Update", command=self.update_bd_subcategories_table).pack(side='left', padx=10)
         
-        # Tree
+        # 2. Tree Container (Bottom)
         table_frame = ttk.Frame(parent_frame)
-        table_frame.pack(fill='both', expand=True, padx=5, pady=5)
+        table_frame.pack(fill='both', expand=True, padx=10, pady=5)
         
-        self.bd_subcat_tree_view = ttk.Treeview(table_frame, height=8)
-        self.bd_subcat_tree_view.pack(fill='both', expand=True)
-        vs = ttk.Scrollbar(table_frame, orient="vertical", command=self.bd_subcat_tree_view.yview)
-        self.bd_subcat_tree_view.configure(yscrollcommand=vs.set)
+        # Vertical Scrollbar
+        vs = ttk.Scrollbar(table_frame, orient="vertical")
+        # Horizontal Scrollbar
+        hs = ttk.Scrollbar(table_frame, orient="horizontal")
+        
+        # Initialize Treeview
+        self.bd_subcat_tree_view = ttk.Treeview(table_frame, show='headings', height=18, 
+                                                yscrollcommand=vs.set, xscrollcommand=hs.set)
+        
+        vs.config(command=self.bd_subcat_tree_view.yview)
+        hs.config(command=self.bd_subcat_tree_view.xview)
+        
+        # --- PACKING ORDER (Fixes the "right side" issue) ---
         vs.pack(side='right', fill='y')
+        hs.pack(side='bottom', fill='x')
         self.bd_subcat_tree_view.pack(side='left', fill='both', expand=True)
-        
-        self.update_bd_subcategories_table(parent_frame)
 
     # Fix for create_bd_subsubcategories_view method (around line 1560)
     def create_bd_subsubcategories_view(self, parent_frame):
-        # Filter
+        # 1. Filter Section
         filter_frame = ttk.LabelFrame(parent_frame, text="Filters", padding=5)
-        filter_frame.pack(fill='x', pady=5)
+        filter_frame.pack(fill='x', pady=5, padx=10)
         
         ttk.Label(filter_frame, text="Category:").pack(side='left')
-        self.bd_subsubcat_filter_cat = tk.StringVar() # Instance variable
-        bd_subsubcat_cat_combo = ttk.Combobox(filter_frame, textvariable=self.bd_subsubcat_filter_cat, values=self.categories, width=20)
+        bd_subsubcat_cat_combo = ttk.Combobox(filter_frame, textvariable=self.bd_subsubcat_filter_cat, 
+                                              values=self.categories, width=20, state="readonly")
         bd_subsubcat_cat_combo.pack(side='left', padx=5)
         
         ttk.Label(filter_frame, text="Subcategory:").pack(side='left')
-        self.bd_subsubcat_filter_sub = tk.StringVar() # Instance variable
-        bd_subsubcat_sub_combo = ttk.Combobox(filter_frame, textvariable=self.bd_subsubcat_filter_sub, state="readonly", width=20)
+        bd_subsubcat_sub_combo = ttk.Combobox(filter_frame, textvariable=self.bd_subsubcat_filter_sub, 
+                                              state="readonly", width=20)
         bd_subsubcat_sub_combo.pack(side='left', padx=5)
         
-        # Fix: Bind to combo widget to update subcategory options
+        # Cascading Binding
         bd_subsubcat_cat_combo.bind('<<ComboboxSelected>>', 
                                     lambda e: self.update_bd_subsub_filter_subs(bd_subsubcat_sub_combo))
         
-        ttk.Button(filter_frame, text="Update", command=lambda: self.update_bd_subsubcategories_table(parent_frame)).pack(side='left', padx=10)
+        ttk.Button(filter_frame, text="Update", command=self.update_bd_subsubcategories_table).pack(side='left', padx=10)
         
-        # Tree
+        # 2. Tree Container
         table_frame = ttk.Frame(parent_frame)
-        table_frame.pack(fill='both', expand=True, padx=5, pady=5)
+        table_frame.pack(fill='both', expand=True, padx=10, pady=5)
         
-        self.bd_subsubcat_tree_view = ttk.Treeview(table_frame, height=8)
-        self.bd_subsubcat_tree_view.pack(fill='both', expand=True)
-        vs = ttk.Scrollbar(table_frame, orient="vertical", command=self.bd_subsubcat_tree_view.yview)
-        self.bd_subsubcat_tree_view.configure(yscrollcommand=vs.set)
+        vs = ttk.Scrollbar(table_frame, orient="vertical")
+        hs = ttk.Scrollbar(table_frame, orient="horizontal")
+        
+        self.bd_subsubcat_tree_view = ttk.Treeview(table_frame, show='headings', height=18,
+                                                   yscrollcommand=vs.set, xscrollcommand=hs.set)
+        
+        vs.config(command=self.bd_subsubcat_tree_view.yview)
+        hs.config(command=self.bd_subsubcat_tree_view.xview)
+        
+        # --- PACKING ORDER ---
         vs.pack(side='right', fill='y')
+        hs.pack(side='bottom', fill='x')
         self.bd_subsubcat_tree_view.pack(side='left', fill='both', expand=True)
-        
-        self.update_bd_subsubcategories_table(parent_frame)
 
     # Add this helper method
     def update_bd_subsub_filter_subs(self, combo_widget):
-        """Update subcategory options based on selected category"""
-        cat = self.bd_subsubcat_filter_cat.get()
+        """Update subcategory options based on selected category in BD Sub-Sub Tab"""
+        cat = self.bd_subsubcat_filter_cat.get() # Matches __init__
         if cat in self.subcategories:
-            subs = list(self.subcategories.get(cat, {}).keys())
+            subs = list(self.subcategories[cat].keys())
             combo_widget['values'] = subs
             if subs: 
                 self.bd_subsubcat_filter_sub.set(subs[0])
+            else:
+                self.bd_subsubcat_filter_sub.set('')
+   
     # --- BD Helper Create/Update Functions ---
     def update_bd_rate(self):
         try:
@@ -1885,8 +1950,39 @@ class FinanceManager:
         tree.tag_configure('total', background='#d0e0ff', font=('Arial', 9, 'bold'))
         tree.tag_configure('avg', background='#C5E1A5', font=('Arial', 9, 'bold'))
 
-    
-    def update_bd_subcategories_table(self, parent_frame):
+    def update_bd_subcategories_table(self, parent_frame=None):
+        """BD Subcategory Matrix: Ensures data ONLY appears in the correct month row"""
+        year = self.bd_db_year_var.get() # Get year from the BD Section selector
+        cat = self.bd_subcat_filter_cat.get()
+        tree = self.bd_subcat_tree_view
+        
+        if not cat: return
+
+        # Get subcategories for the selected category
+        subs = list(self.subcategories.get(cat, {}).keys())
+        
+        # Initialize matrix: matrix[month_integer][subcategory_name]
+        matrix = defaultdict(lambda: defaultdict(float))
+        
+        for t in self.bd_transactions:
+            d_parts = t.get('date', '').split('/')
+            if len(d_parts) == 3:
+                t_day, t_month, t_year = d_parts
+                
+                # Check if transaction matches the selected YEAR and CATEGORY
+                if t_year == year and t.get('category') == cat:
+                    try:
+                        m_idx = int(t_month) # Convert "05" to 5
+                        sub_name = t.get('subcategory')
+                        if sub_name in subs:
+                            # Aggregate amount ONLY for this specific month
+                            matrix[m_idx][sub_name] += float(t.get('amount', 0))
+                    except ValueError: continue
+        
+        # Call the universal renderer to draw the 12 month rows
+        self._render_database_rows(tree, subs, matrix)
+        
+    def update_bd_subcategories_table2(self, parent_frame):
         """Similar to DB Subcategory Table: Filter by Cat, Rows=Months, Cols=Subs"""
         tree = self.bd_subcat_tree_view
         for item in tree.get_children():
@@ -1952,8 +2048,38 @@ class FinanceManager:
             if subs: var_sub.current(0)
 
     
+    def update_bd_subsubcategories_table(self, parent_frame=None):
+        """BD Sub-Subcategory Matrix: Corrected Month-Specific Filtering"""
+        year = self.bd_db_year_var.get()
+        cat = self.bd_subsubcat_filter_cat.get()
+        sub = self.bd_subsubcat_filter_sub.get()
+        tree = self.bd_subsubcat_tree_view
+        
+        if not cat or not sub: return
 
-    def update_bd_subsubcategories_table(self, parent_frame):
+        # Get list of items (e.g., Aldi, Lidl)
+        ss_list = self.subcategories.get(cat, {}).get(sub, [])
+        
+        matrix = defaultdict(lambda: defaultdict(float))
+        
+        for t in self.bd_transactions:
+            d_parts = t.get('date', '').split('/')
+            if len(d_parts) == 3:
+                t_day, t_month, t_year = d_parts
+                
+                # Match YEAR, CATEGORY, and SUBCATEGORY
+                if t_year == year and t.get('category') == cat and t.get('subcategory') == sub:
+                    try:
+                        m_idx = int(t_month) # Key month identifier
+                        ss_name = t.get('subsubcategory')
+                        if ss_name in ss_list:
+                            # Add amount ONLY to the specific month's bucket
+                            matrix[m_idx][ss_name] += float(t.get('amount', 0))
+                    except ValueError: continue
+
+        self._render_database_rows(tree, ss_list, matrix)
+        
+    def update_bd_subsubcategories_table2(self, parent_frame):
         """Similar to DB Sub-subcategory Table: Filter by Cat+Sub, Rows=Months, Cols=SubSubs"""
         tree = self.bd_subsubcat_tree_view
         for item in tree.get_children():
