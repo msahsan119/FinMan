@@ -77,20 +77,23 @@ class FinanceManager:
                 with open(self.data_file, 'r') as f:
                     data = json.load(f)
                     self.categories = data.get('categories', self.categories)
-                    
-                    # Load subcategories
-                    loaded_sub = data.get('subcategories', {})
-                    self.subcategories = loaded_sub 
-                    
+                    self.subcategories = data.get('subcategories', {})
                     self.transactions = data.get('transactions', [])
                     self.income_sources = data.get('income_sources', [])
                     self.investments = data.get('investments', [])
                     self.investment_returns = data.get('investment_returns', [])
                     self.investment_categories = data.get('investment_categories', [])
-                    self.bd_balance = data.get('bd_balance', 0.0)
-                    self.bd_conversion_rate = data.get('bd_conversion_rate', 140.0)
+                    
+                    # FIX: Force float conversion and provide 0.0 as default
+                    raw_bd_balance = data.get('bd_balance', 0.0)
+                    if isinstance(raw_bd_balance, list):
+                        self.bd_balance = 0.0
+                    else:
+                        self.bd_balance = float(raw_bd_balance)
+                        
+                    self.bd_conversion_rate = float(data.get('bd_conversion_rate', 140.0))
                     self.bd_transactions = data.get('bd_transactions', [])
-                    self.initial_euro_balance = data.get('initial_euro_balance', 0.0)
+                    self.initial_euro_balance = float(data.get('initial_euro_balance', 0.0))
                     
                     # Ensure transactions have subsubcategory field for legacy data
                     for t in self.transactions:
@@ -100,7 +103,7 @@ class FinanceManager:
                         
             except Exception as e:
                 print(f"Load error: {e}")
-                pass
+                self.bd_balance = 0.0 # Safety fallback
 
 
     
@@ -168,9 +171,8 @@ class FinanceManager:
             print(f"Auto-CSV Error: {e}")
 
     def update_subsubcategory_table(self):
-        #"""Sub-Subcategory View: Month rows vs Sub-Subcategories in Columns"""
-        for item in self.subsub_tree.get_children():
-            self.subsub_tree.delete(item)
+        """Sub-Subcategory View: Month rows vs Items in Columns"""
+        if not hasattr(self, 'subsub_tree'): return
 
         year = self.db_year_var.get()
         cat = self.subsub_filter_cat_var.get()
@@ -180,33 +182,24 @@ class FinanceManager:
             messagebox.showwarning("Filter", "Please select Category and Subcategory")
             return
 
-        # Get the sub-sub items list
+        # Get the sub-sub items list (e.g. ['Edeka', 'Aldi'])
         ss_list = self.subcategories.get(cat, {}).get(sub, [])
-        
-        columns = ['Month'] + ss_list + ['Total']
-        self.subsub_tree['columns'] = columns
-        self.subsub_tree['show'] = 'headings'
-        
-        for col in columns:
-            self.subsub_tree.heading(col, text=col)
-            self.subsub_tree.column(col, width=100, anchor='center')
-        
-        # Clear existing rows using the correct name
-        for item in self.subsub_tree.get_children():
-            self.subsub_tree.delete(item)
+        if not isinstance(ss_list, list): ss_list = []
 
-        # Calculate Matrix logic...
+        # Calculate Matrix
         matrix = defaultdict(lambda: defaultdict(float))
         for t in self.transactions:
-            if t.get('date', '').endswith(year) and t.get('category') == cat and t.get('subcategory') == sub:
-                try:
-                    m_idx = int(t['date'].split('/')[1])
-                    ss = t.get('subsubcategory')
-                    if ss in ss_list:
-                        matrix[m_idx][ss] += float(t.get('amount', 0))
-                except: continue
+            d_parts = t.get('date', '').split('/')
+            if len(d_parts) == 3 and d_parts[2] == year:
+                if t.get('category') == cat and t.get('subcategory') == sub:
+                    try:
+                        m_idx = int(d_parts[1])
+                        ss_name = t.get('subsubcategory', '')
+                        if ss_name in ss_list:
+                            matrix[m_idx][ss_name] += float(t.get('amount', 0))
+                    except: continue
 
-        # Render rows using the correct name
+        # RE-INITIALIZE AND RENDER using the fixed helper
         self._render_database_rows(self.subsub_tree, ss_list, matrix)
         
     
@@ -1260,52 +1253,58 @@ class FinanceManager:
     
 
     def _render_database_rows(self, tree, col_items, matrix):
-        """Universal Rendering for Euro and BD Tabs. Forces ALL columns to show."""
+        """Universal Rendering: Forces column visibility and prevents Tcl Errors"""
         month_names = ["January", "February", "March", "April", "May", "June", 
                        "July", "August", "September", "October", "November", "December"]
         
-        # 1. Reset columns completely
+        # 1. THE FIX: Reset columns and displaycolumns simultaneously
         full_cols = ['Month'] + list(col_items) + ['Total']
+        
+        # We set displaycolumns to an empty tuple first to clear internal Tcl cache
+        tree['displaycolumns'] = () 
         tree['columns'] = full_cols
-        tree['displaycolumns'] = full_cols # FORCES visibility of every column
+        tree['displaycolumns'] = full_cols # Now set them to the new list
         
         for c in full_cols:
-            tree.heading(c, text=c)
-            # stretch=False + width ensures the horizontal scrollbar triggers correctly
-            tree.column(c, width=125, anchor='center', stretch=False)
+            tree.heading(c, text=str(c)) # Ensure header is a string
+            # stretch=tk.NO is REQUIRED to make the horizontal scrollbar work
+            tree.column(c, width=125, anchor='center', stretch=tk.NO)
 
-        # 2. Clear rows
+        # 2. Clear old items
         for item in tree.get_children():
             tree.delete(item)
 
-        # 3. Insert Data
-        col_sums = defaultdict(float)
+        # 3. Insert 12 Month Rows
         grand_total = 0
+        col_sums = defaultdict(float)
 
         for m_idx in range(1, 13):
             m_name = month_names[m_idx-1]
             row = [m_name]
             row_sum = 0
             for item in col_items:
-                val = matrix[m_idx][item]
+                # Safe nested lookup
+                val = matrix.get(m_idx, {}).get(item, 0.0)
                 row.append(f"{val:.2f}" if val != 0 else "0.00")
                 row_sum += val
                 col_sums[item] += val
+            
             row.append(f"{row_sum:.2f}")
             grand_total += row_sum
             tree.insert('', 'end', values=row)
 
-        # 4. Total and Average
-        t_row, a_row = ["TOTAL"], ["AVERAGE"]
-        for item in col_items:
-            t_row.append(f"{col_sums[item]:.2f}")
-            a_row.append(f"{(col_sums[item]/12):.2f}")
-        t_row.append(f"{grand_total:.2f}")
-        a_row.append(f"{(grand_total/12):.2f}")
-
+        # 4. Footer Rows
+        t_row = ["TOTAL"] + [f"{col_sums[i]:.2f}" for i in col_items] + [f"{grand_total:.2f}"]
+        a_row = ["AVERAGE"] + [f"{(col_sums[i]/12):.2f}" for i in col_items] + [f"{(grand_total/12):.2f}"]
+        
         tree.insert('', 'end', values=t_row, tags=('summary',))
         tree.insert('', 'end', values=a_row, tags=('summary',))
         tree.tag_configure('summary', background='#f0f0f0', font=('Arial', 10, 'bold'))
+        
+        # Sync the scrollable canvas
+        if hasattr(self, 'db_canvas'):
+            self.db_scroll_frame.update_idletasks()
+            self.db_canvas.configure(scrollregion=self.db_canvas.bbox("all"))
         
     def update_subcategory_table(self):
         year = self.db_year_var.get()
