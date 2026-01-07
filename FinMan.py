@@ -1,3178 +1,1367 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog, simpledialog
-from tkcalendar import DateEntry
-import json
-import csv
+from tkinter import ttk, messagebox, simpledialog, filedialog
 from datetime import datetime
-from collections import defaultdict
+import json
+import os
+import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
-import os
-import math
 
-class FinanceManager:
-    
-    
+# ==========================================
+# Data Manager & Backend Logic
+# ==========================================
+
+class DataManager:
+    def __init__(self):
+        self.filename = "finance_data.json"
+        # CSV File saved in the same folder as script
+        self.csv_filename = "finance_data.csv"
+        # Default rate 100
+        self.DEFAULT_RATE = 140.0
+        
+        self.defaults = {
+            "initial_balance_eur": 0.0,
+            "current_balance_eur": 0.0,
+            "current_balance_bd": 0.0,
+            "categories": {
+                "GER": {"Food": {"Groceries": {}, "Restaurant": {}}, "Transport": {"Fuel": {}, "Ticket": {}}},
+                "BD": {"Food": {"Bazar": {}, "Outside": {}}, "Transport": {"Rickshaw": {}, "CNG": {}}}
+            },
+            "income": [],
+            "expenses": [],
+            "investments": [],
+            "conversion_rates": {}
+        }
+        
+        self.data = self.defaults.copy()
+        # Load data order: 1. Load JSON (Primary), 2. Load CSV (Conditional to prevent loop)
+        self.load_data()
+        self.load_data_csv_conditional() 
+
+    def save_data(self):
+        try:
+            with open(self.filename, 'w') as f:
+                json.dump(self.data, f, indent=4, default=str)
+        except Exception as e:
+            print(f"Error saving JSON data: {e}")
+
+    def load_data(self):
+        if os.path.exists(self.filename):
+            try:
+                with open(self.filename, 'r') as f:
+                    loaded_data = json.load(f)
+                
+                if not isinstance(loaded_data, dict):
+                    self.data = self.defaults
+                    return
+
+                for key, value in self.defaults.items():
+                    if key not in loaded_data:
+                        loaded_data[key] = value
+                
+                if not isinstance(loaded_data.get("categories", {}), dict):
+                    loaded_data["categories"] = self.defaults["categories"]
+                
+                for region in ["GER", "BD"]:
+                    if region not in loaded_data["categories"]:
+                        loaded_data["categories"][region] = {}
+
+                self.data = loaded_data
+            except Exception as e:
+                print(f"Error loading JSON, using defaults: {e}")
+                self.data = self.defaults
+        else:
+            self.data = self.defaults
+
+    # --- CSV Load / Save Functions ---
+    def save_data_csv(self):
+        # Save everything to ONE file: finance_data.csv
+        rows = []
+        
+        # 1. Process Income
+        for item in self.data["income"]:
+            rows.append({
+                "Record Type": "Income",
+                "Date": item["date"],
+                "Region": "",
+                "Category": "",
+                "Subcategory": "",
+                "Sub Subcategory": "",
+                "Amount Local": 0,
+                "Amount EUR": item["amount"],
+                "Rate": 1.0,
+                "Source": item["source"],
+                "Type": "",
+                "Description": "",
+                "Name": "",
+                "Address": ""
+            })
+            
+        # 2. Process Expenses
+        for item in self.data["expenses"]:
+            rows.append({
+                "Record Type": "Expense",
+                "Date": item["date"],
+                "Region": item["region"],
+                "Category": item["category"],
+                "Subcategory": item["subcategory"],
+                "Sub Subcategory": item["subsubcategory"],
+                "Amount Local": item["amount_local"],
+                "Amount EUR": item["amount_eur"],
+                "Rate": item["rate"],
+                "Source": "",
+                "Type": "",
+                "Description": "",
+                "Name": "",
+                "Address": ""
+            })
+            
+        # 3. Process Investments
+        for item in self.data["investments"]:
+            rows.append({
+                "Record Type": "Investment",
+                "Date": item["date"],
+                "Region": "",
+                "Category": item["category"],
+                "Subcategory": "",
+                "Sub Subcategory": "",
+                "Amount Local": 0,
+                "Amount EUR": item["amount"],
+                "Rate": 1.0,
+                "Source": "",
+                "Type": item["type"], # Investment vs Return
+                "Description": item["description"],
+                "Name": item["name"] if "name" in item else "",
+                "Address": item["address"] if "address" in item else ""
+            })
+            
+        df = pd.DataFrame(rows)
+        
+        try:
+            # Overwrite mode ('w') ensures we don't keep adding duplicates on repeated saves
+            df.to_csv(self.csv_filename, mode='w', index=False)
+        except Exception as e:
+            print(f"Error saving CSV: {e}")
+
+    def load_data_csv_conditional(self):
+        # FIX: Only load CSV if JSON does not exist.
+        # This prevents the "Loop of Death" where CSV loads -> JSON saves -> Restart repeats.
+        if not os.path.exists(self.filename):
+            files_exist = False
+            
+            # Read CSV
+            if os.path.exists(self.csv_filename):
+                try:
+                    df = pd.read_csv(self.csv_filename)
+                    
+                    # Reconstruct JSON structure
+                    inc = []
+                    exp = []
+                    inv = []
+                    
+                    for _, row in df.iterrows():
+                        r_type = row["Record Type"]
+                        if r_type == "Income":
+                            inc.append({
+                                "source": row["Source"],
+                                "amount": row["Amount EUR"],
+                                "date": row["Date"]
+                            })
+                        elif r_type == "Expense":
+                            exp.append({
+                                "region": row["Region"],
+                                "category": row["Category"],
+                                "subcategory": row["Subcategory"],
+                                "subsubcategory": row["Sub Subcategory"],
+                                "amount_local": row["Amount Local"],
+                                "rate": row["Rate"],
+                                "amount_eur": row["Amount EUR"],
+                                "date": row["Date"]
+                            })
+                        elif r_type == "Investment":
+                            inv.append({
+                                "type": row["Type"], # Investment/Return
+                                "category": row["Category"],
+                                "amount": row["Amount EUR"],
+                                "date": row["Date"],
+                                "description": row["Description"],
+                                "name": row["Name"] if pd.notnull(row["Name"]) else "",
+                                "address": row["Address"] if pd.notnull(row["Address"]) else ""
+                            })
+                    
+                    self.data["income"] = inc
+                    self.data["expenses"] = exp
+                    self.data["investments"] = inv
+                    files_exist = True
+                    
+                except Exception as e:
+                    print(f"Error reading CSV: {e}")
+            
+            if files_exist:
+                self.save_data()
+
+    def get_categories(self, region):
+        return self.data["categories"].get(region, {})
+
+    def update_category_structure(self, region, new_structure):
+        self.data["categories"][region] = new_structure
+        self.save_data()
+        self.save_data_csv()
+
+    def set_initial_balance(self, amount_eur):
+        self.data["initial_balance_eur"] = float(amount_eur)
+        self.save_data()
+        self.save_data_csv()
+
+    def add_income(self, source, amount, date, type="EUR"):
+        entry = {"source": source, "amount": float(amount), "date": date, "type": type}
+        self.data["income"].append(entry)
+        self.data["current_balance_eur"] += float(amount)
+        self.save_data()
+        self.save_data_csv()
+
+    def add_bd_deposit(self, amount_tk):
+        self.data["current_balance_bd"] += amount_tk
+        self.save_data()
+        self.save_data_csv()
+
+    def add_expense(self, region, cat, sub, subsub, amount_local, rate, date):
+        amount_local = float(amount_local)
+        
+        if region == "GER":
+            rate = 1.0
+            amount_eur = amount_local
+        else:
+            if not rate or float(rate) == 0:
+                rate = self.DEFAULT_RATE
+            else:
+                rate = float(rate)
+            amount_eur = amount_local / rate if rate > 0 else 0
+        
+        entry = {
+            "region": region,
+            "category": cat,
+            "subcategory": sub,
+            "subsubcategory": subsub,
+            "amount_local": amount_local,
+            "rate": rate,
+            "amount_eur": amount_eur,
+            "date": date
+        }
+        self.data["expenses"].append(entry)
+        
+        if region == "BD":
+            self.data["current_balance_bd"] -= amount_local
+        else:
+            self.data["current_balance_eur"] -= amount_local
+        self.save_data()
+        self.save_data_csv()
+
+    def add_investment(self, inv_type, category, amount, date, description, name=None, address=None):
+        entry = {
+            "type": inv_type, 
+            "category": category,
+            "amount": float(amount),
+            "date": date,
+            "description": description,
+            "name": name,
+            "address": address
+        }
+        self.data["investments"].append(entry)
+        self.data["current_balance_eur"] -= float(amount)
+        self.save_data()
+        self.save_data_csv()
+
+    def get_summary_df(self):
+        # These are just helpers for the Analysis tab
+        inc_df = pd.DataFrame(self.data["income"])
+        if not inc_df.empty:
+            inc_df["month_dt"] = pd.to_datetime(inc_df["date"])
+            inc_df["month"] = inc_df["month_dt"].dt.to_period("M")
+            inc_grp = inc_df.groupby("month")["amount"].sum().reset_index()
+        else:
+            inc_grp = pd.DataFrame(columns=["month", "amount"])
+
+        exp_df = pd.DataFrame(self.data["expenses"])
+        if not exp_df.empty:
+            exp_df["month_dt"] = pd.to_datetime(exp_df["date"])
+            exp_df["month"] = exp_df["month_dt"].dt.to_period("M")
+            exp_df["amount_eur"] = pd.to_numeric(exp_df["amount_eur"], errors='coerce').fillna(0)
+            
+            exp_grp_eur = exp_df[exp_df["region"] == "GER"].groupby("month")["amount_eur"].sum().reset_index()
+            exp_grp_bd_local = exp_df[exp_df["region"] == "BD"].groupby("month")["amount_local"].sum().reset_index()
+            exp_grp_bd_eur = exp_df[exp_df["region"] == "BD"].groupby("month")["amount_local"].sum().reset_index()
+            exp_grp_bd_eur["amount_eur"] = exp_grp_bd_eur["amount_local"] / self.DEFAULT_RATE
+        else:
+            exp_grp_eur = pd.DataFrame(columns=["month", "amount_eur"])
+            exp_grp_bd_local = pd.DataFrame(columns=["month", "amount_local"])
+            exp_grp_bd_eur = pd.DataFrame(columns=["month", "amount_eur"])
+            
+        inv_df = pd.DataFrame(self.data["investments"])
+        if not inv_df.empty:
+            inv_df["month_dt"] = pd.to_datetime(inv_df["date"])
+            inv_df["month"] = inv_df["month_dt"].dt.to_period("M")
+            inv_grp = inv_df[inv_df["type"] == "Investment"].groupby("month")["amount"].sum().reset_index()
+            ret_grp = inv_df[inv_df["type"] == "Return"].groupby("month")["amount"].sum().reset_index()
+        else:
+            inv_grp = pd.DataFrame(columns=["month", "amount"])
+            ret_grp = pd.DataFrame(columns=["month", "amount"])
+
+        return inc_grp, exp_grp_eur, exp_grp_bd_local, exp_grp_bd_eur, inv_grp, ret_grp
+
+    def get_kh_details(self):
+        kh_list = []
+        kh_df = pd.DataFrame(self.data["investments"])
+        kh_df = kh_df[kh_df["category"] == "Karje hasana"]
+        
+        groups = kh_df.groupby("name")
+        for name, group in groups:
+            total_inv = group[group["type"] == "Investment"]["amount"].sum()
+            total_ret = group[group["type"] == "Return"]["amount"].sum()
+            if len(group) > 0:
+                row = group.iloc[0]
+                kh_list.append({
+                    "Date": row["date"],
+                    "Name/Org": name,
+                    "Address": row.get("address", ""),
+                    "Amount (Given)": total_inv,
+                    "Return": total_ret,
+                    "To Be Return": total_inv - total_ret
+                })
+        return kh_list
+
+# ==========================================
+# GUI Application
+# ==========================================
+
+class FinanceApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Personal Finance Manager")
-        self.root.geometry("1500x950")
+        self.root.title("Personal Finance Management System")
+        self.root.geometry("1450x950")
         
-        self.data_file = "finance_data.json"
-        self.initial_euro_balance = 0.0
+        # DataManager Backend
+        self.dm = DataManager()
         
-        # --- 1. INITIALIZE EVERY TKINTER VARIABLE FIRST (CRITICAL) ---
-        
-        # Database Tab Variables
-        self.db_year_var = tk.StringVar(value=str(datetime.now().year))
-        self.subcat_filter_cat_var = tk.StringVar()
-        self.subsub_filter_cat_var = tk.StringVar()
-        self.subsub_filter_sub_var = tk.StringVar()
-        
-        # Analysis Tab (Euro) Variables
-        self.analysis_year_var = tk.StringVar(value=str(datetime.now().year))
-        self.analysis_month_var = tk.StringVar(value="Whole Year")
-        self.analysis_cat_var = tk.StringVar()
-        self.analysis_sub_var = tk.StringVar()
+        # Styles
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure("Bold.TLabel", font=("Helvetica", 10, "bold"))
+        style.configure("Header.TLabel", font=("Helvetica", 12, "bold"))
+        style.configure("Highlight.TLabel", font=("Helvetica", 12, "bold"), foreground="blue", background="#e6f7ff")
+        style.configure("Summary.Treeview", font=("Arial", 9))
 
-        # BD Section Main Filter Variables
-        self.bd_db_year_var = tk.StringVar(value=str(datetime.now().year))
-        self.bd_subcat_filter_cat = tk.StringVar()
-        self.bd_subsubcat_filter_cat = tk.StringVar()
-        self.bd_subsubcat_filter_sub = tk.StringVar()
+        # Tabs
+        self.tabs = ttk.Notebook(root)
+        self.tabs.pack(fill="both", expand=True)
         
-        # BD Section Analysis Tab Variables
-        self.bd_ana_year_var = tk.StringVar(value=str(datetime.now().year))
-        self.bd_ana_month_var = tk.StringVar(value="Whole Year")
-        self.bd_ana_level_var = tk.StringVar(value="Category")
-        self.bd_ana_cat_var = tk.StringVar()
-        self.bd_ana_sub_var = tk.StringVar()
-
-        # Hierarchy Manager Variables
-        self.mgr_cat_var = tk.StringVar()
-        self.mgr_sub_var = tk.StringVar()
+        self.tab1 = ttk.Frame(self.tabs)
+        self.tab2 = ttk.Frame(self.tabs)
+        self.tab3 = ttk.Frame(self.tabs)
         
-        # --- NEW: BD MANAGER VARIABLES ---
-        self.bd_mgr_cat_var = tk.StringVar()
-        self.bd_mgr_sub_var = tk.StringVar()
-        self.bd_mgr_subsub_var = tk.StringVar()
-
-        # --- 2. INITIALIZE DATA STRUCTURES ---
-        # INPUT SECTION (Euro)
-        self.categories = []
-        self.subcategories = {}
+        self.tabs.add(self.tab1, text="Input")
+        self.tabs.add(self.tab2, text="Database")
+        self.tabs.add(self.tab3, text="Analysis")
         
-        # --- NEW: BD SECTION DATA (Independent) ---
-        self.bd_categories = [] # Defaults for BD
-        self.bd_subcategories = {} # Structure: {'Household': {'Rent': [], 'Grocery': ['Shop1', 'Shop2']}, ...}
+        # Bind tab change
+        self.tabs.bind("<<NotebookTabChanged>>", self.on_tab_change)
         
-        self.transactions = [] 
-        self.income_sources = []
-        self.investments = []
-        self.investment_returns = []
-        self.investment_categories = []
-        self.bd_balance = 0.0
-        self.bd_conversion_rate = 140.0
-        self.bd_transactions = [] 
+        # Setup UI
+        self.setup_tab1()
+        self.setup_tab2()
+        self.setup_tab3()
+        self.update_clock()
+        # Initial summary population
+        self.update_summary()
 
-        # --- 3. LOAD DATA AND BUILD UI ---
-        self.load_data()
-        self.create_widgets()
-        self.auto_save()
+    def on_tab_change(self, event):
+        selected_tab = self.tabs.index(self.tabs.select())
+        # Auto-refresh when switching
+        if selected_tab == 1: 
+            self.generate_db_tables()
+        elif selected_tab == 2:
+            self.plot_trend()
+            self.plot_pie()
+
+    def refresh_all_tabs(self):
+        """Helper to refresh Summary, Database, and Analysis tabs"""
+        self.update_summary()
+        if self.tabs.index(self.tabs.select()) == 1:
+            self.generate_db_tables()
+        elif self.tabs.index(self.tabs.select()) == 2:
+             self.generate_db_tables()
+        elif self.tabs.index(self.tabs.select()) == 3:
+             self.plot_trend()
+             self.plot_pie()
+
+    def update_clock(self):
+        now = datetime.now()
+        if hasattr(self, 'clock_label'):
+            self.clock_label.config(text=now.strftime("%H:%M:%S"))
+        if hasattr(self, 'date_label'):
+            self.date_label.config(text=now.strftime("%A, %d %B %Y"))
+        self.root.after(1000, self.update_clock)
+
+    # ==========================================
+    # TAB 1: INPUT
+    # ==========================================
+    def setup_tab1(self):
+        # --- Top Section ---
+        top_frame = ttk.LabelFrame(self.tab1, text="Welcome")
+        top_frame.pack(fill="x", padx=10, pady=5)
         
-    def load_data(self):
-        if os.path.exists(self.data_file):
-            try:
-                with open(self.data_file, 'r') as f:
-                    data = json.load(f)
-                    self.categories = data.get('categories', self.categories)
-                    self.subcategories = data.get('subcategories', {})
-                    self.transactions = data.get('transactions', [])
-                    self.income_sources = data.get('income_sources', [])
-                    self.investments = data.get('investments', [])
-                    self.investment_returns = data.get('investment_returns', [])
-                    self.investment_categories = data.get('investment_categories', [])
-                    
-                    # --- LOAD BD SPECIFIC DATA ---
-                    self.bd_categories = data.get('bd_categories', self.bd_categories)
-                    self.bd_subcategories = data.get('bd_subcategories', self.bd_subcategories)
-                    
-                    raw_bd_balance = data.get('bd_balance', 0.0)
-                    if isinstance(raw_bd_balance, list):
-                        self.bd_balance = 0.0
-                    else:
-                        self.bd_balance = float(raw_bd_balance)
-                        
-                    self.bd_conversion_rate = float(data.get('bd_conversion_rate', 140.0))
-                    self.bd_transactions = data.get('bd_transactions', [])
-                    self.initial_euro_balance = float(data.get('initial_euro_balance', 0.0))
-                    # Ensure legacy transactions have fields
-                    for t in self.transactions:
-                        if 'subsubcategory' not in t: t['subsubcategory'] = ''
-                    for t in self.bd_transactions:
-                        if 'subsubcategory' not in t: t['subsubcategory'] = ''
-                        
-            except Exception as e:
-                print(f"Load error: {e}")
-                self.bd_balance = 0.0
-
-
-    
-    
-    def save_data(self):
-        data = {
-            'categories': self.categories, 'subcategories': self.subcategories,
-            'transactions': self.transactions, 'income_sources': self.income_sources,
-            'investments': self.investments, 'investment_returns': self.investment_returns,
-            'investment_categories': self.investment_categories, 'bd_balance': self.bd_balance,
-            'bd_conversion_rate': self.bd_conversion_rate, 'bd_transactions': self.bd_transactions, 
-            'initial_euro_balance': self.initial_euro_balance,
-            
-            # --- SAVE BD SPECIFIC DATA ---
-            'bd_categories': self.bd_categories,
-            'bd_subcategories': self.bd_subcategories,
-        }
-        with open(self.data_file, 'w') as f:
-            json.dump(data, f, indent=2)
+        canvas = tk.Canvas(top_frame, width=400, height=100, bg="skyblue")
+        canvas.pack(side="left", padx=10)
+        canvas.create_rectangle(150, 40, 250, 90, outline="white", width=3)
+        canvas.create_line(200, 40, 200, 90, fill="white", width=3)
+        canvas.create_line(150, 65, 250, 65, fill="white", width=3)
+        canvas.create_oval(20, 10, 50, 40, fill="yellow", outline="orange")
+        canvas.create_rectangle(50, 50, 70, 90, fill="brown") 
+        canvas.create_oval(30, 20, 90, 60, fill="green") 
         
-        # Auto-CSV Save
-        self.export_to_csv_auto()
-        self.update_input_summary_table() # This updates the Matrix
-        if hasattr(self, 'bd_taka_label'): 
-            self.update_bd_display()      # This updates the BD Tab
+        lbl_frame = ttk.Frame(top_frame)
+        lbl_frame.pack(side="left", fill="x", expand=True, padx=20)
+        ttk.Label(lbl_frame, text="Bismillah hir rahmanir Rahim", font=("Times New Roman", 16, "italic")).pack(anchor="w")
+        self.clock_label = ttk.Label(lbl_frame, font=("Arial", 14))
+        self.clock_label.pack(anchor="w")
+        self.date_label = ttk.Label(lbl_frame, font=("Arial", 12))
+        self.date_label.pack(anchor="w")
+
+        # Highlighted Balances
+        ttk.Separator(lbl_frame, orient="horizontal").pack(fill="x", pady=5)
+        self.lbl_total_bal_top = ttk.Label(lbl_frame, text="Total Balance: 0.00 EUR", style="Highlight.TLabel")
+        self.lbl_total_bal_top.pack(anchor="w", pady=2)
         
+        self.lbl_bd_bal_top = ttk.Label(lbl_frame, text="BD Balance: 0.00 Tk (0.00 EUR)", style="Highlight.TLabel", foreground="green")
+        self.lbl_bd_bal_top.pack(anchor="w", pady=2)
+        ttk.Separator(lbl_frame, orient="horizontal").pack(fill="x", pady=5)
 
-    def export_to_csv_auto(self):
-        """Automatically saves all transactions to CSV file"""
-        with open("finance_backup.csv", "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(["Type", "Date", "Category", "Subcategory", "Sub-Sub", "Amount", "Currency"])
-            for t in self.transactions:
-                writer.writerow(["Euro Exp", t['date'], t['category'], t['subcategory'], t.get('subsubcategory',''), t['amount'], "EUR"])
-            for t in self.bd_transactions:
-                writer.writerow(["BD Exp", t['date'], t['category'], t['subcategory'], t.get('subsubcategory',''), t['amount'], "BDT"])
+        # --- Middle Section ---
+        mid_frame = ttk.Frame(self.tab1)
+        mid_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        # Left: Income & Initial
+        left_frame = ttk.LabelFrame(mid_frame, text="Income & Initial")
+        left_frame.grid(row=0, column=0, sticky="nsew", padx=5)
+        
+        # Income Form
+        ttk.Label(left_frame, text="Source:").grid(row=0, column=0, sticky="w", padx=5, pady=2)
+        self.inc_src = ttk.Combobox(left_frame, values=["Salary", "Profit", "Return", "Other"])
+        self.inc_src.grid(row=0, column=1, padx=5, pady=2)
+        
+        ttk.Label(left_frame, text="Amount (EUR):").grid(row=1, column=0, sticky="w", padx=5, pady=2)
+        self.inc_amt = ttk.Entry(left_frame)
+        self.inc_amt.grid(row=1, column=1, padx=5, pady=2)
+        
+        ttk.Label(left_frame, text="Date:").grid(row=2, column=0, sticky="w", padx=5, pady=2)
+        today = datetime.now().strftime("%Y-%m-%d")
+        self.inc_date = ttk.Entry(left_frame)
+        self.inc_date.insert(0, today)
+        self.inc_date.grid(row=2, column=1, padx=5, pady=2)
+        ttk.Button(left_frame, text="Add Income", command=self.add_income_action).grid(row=3, column=0, columnspan=2, pady=5)
+        
+        ttk.Separator(left_frame, orient="horizontal").grid(row=4, column=0, columnspan=3, sticky="ew", pady=10)
+        
+        # Independent Initial Balance
+        ttk.Label(left_frame, text="Initial Balance (EUR):").grid(row=5, column=0, sticky="w", padx=5)
+        self.init_bal_entry = ttk.Entry(left_frame)
+        self.init_bal_entry.insert(0, str(self.dm.data['initial_balance_eur']))
+        self.init_bal_entry.grid(row=5, column=1, padx=5, pady=2)
+        ttk.Button(left_frame, text="Update Initial", command=self.update_initial_bal).grid(row=6, column=0, columnspan=2, pady=2)
+        
+        ttk.Separator(left_frame, orient="horizontal").grid(row=7, column=0, columnspan=3, sticky="ew", pady=10)
 
-    def propagate_rename(self, level, old_name, new_name, p_cat=None, p_sub=None):
-        """Updates all existing transaction records when a name is edited"""
-        target_lists = [self.transactions, self.bd_transactions]
-        for t_list in target_lists:
-            for t in t_list:
-                if level == 'cat' and t.get('category') == old_name:
-                    t['category'] = new_name
-                elif level == 'sub' and t.get('category') == p_cat and t.get('subcategory') == old_name:
-                    t['subcategory'] = new_name
-                elif level == 'subsub' and t.get('category') == p_cat and t.get('subcategory') == p_sub and t.get('subsubcategory') == old_name:
-                    t['subsubcategory'] = new_name
+        # Add Money to BD Section
+        ttk.Label(left_frame, text="Add Money (BD Tk):").grid(row=8, column=0, sticky="w", padx=5)
+        self.bd_deposit_amt = ttk.Entry(left_frame)
+        self.bd_deposit_amt.grid(row=8, column=1, padx=5, pady=2)
+        
+        ttk.Label(left_frame, text="Rate (1 EUR = ? Tk):").grid(row=9, column=0, sticky="w", padx=5)
+        self.bd_deposit_rate = ttk.Entry(left_frame)
+        self.bd_deposit_rate.insert(0, str(int(self.dm.DEFAULT_RATE))) # Show 100
+        self.bd_deposit_rate.grid(row=9, column=1, padx=5, pady=2)
+        
+        ttk.Button(left_frame, text="Deposit to BD", command=self.add_bd_deposit_action).grid(row=10, column=0, columnspan=2, pady=5)
 
-    def auto_export_csv_backup(self):
-        """Generates a flat CSV file of all transactions for Excel/External use"""
+        # Category Management (Left Bottom)
+        cat_mgmt_frame = ttk.LabelFrame(left_frame, text="Category Management")
+        cat_mgmt_frame.grid(row=11, column=0, columnspan=3, sticky="nsew", padx=5, pady=10)
+        
+        self.cat_region = ttk.Combobox(cat_mgmt_frame, values=["GER", "BD"], state="readonly")
+        self.cat_region.current(0)
+        self.cat_region.grid(row=0, column=0, padx=5, pady=5)
+        ttk.Button(cat_mgmt_frame, text="Manage Categories", command=self.open_category_manager).grid(row=0, column=1, padx=5)
+
+        # Center: Expenditure
+        center_frame = ttk.LabelFrame(mid_frame, text="Add Expenditure")
+        center_frame.grid(row=0, column=1, sticky="nsew", padx=5)
+        
+        ttk.Label(center_frame, text="Region:").grid(row=0, column=0, sticky="w", padx=5)
+        self.exp_region = ttk.Combobox(center_frame, values=["GER", "BD"], state="readonly")
+        self.exp_region.current(0)
+        self.exp_region.grid(row=0, column=1, sticky="ew", padx=5)
+        self.exp_region.bind("<<ComboboxSelected>>", self.populate_exp_cats)
+        
+        ttk.Label(center_frame, text="Category:").grid(row=1, column=0, sticky="w", padx=5)
+        self.exp_cat = ttk.Combobox(center_frame, state="readonly")
+        self.exp_cat.grid(row=1, column=1, sticky="ew", padx=5)
+        self.exp_cat.bind("<<ComboboxSelected>>", self.populate_exp_sub)
+        
+        ttk.Label(center_frame, text="Subcategory:").grid(row=2, column=0, sticky="w", padx=5)
+        self.exp_sub = ttk.Combobox(center_frame, state="readonly")
+        self.exp_sub.grid(row=2, column=1, sticky="ew", padx=5)
+        self.exp_sub.bind("<<ComboboxSelected>>", self.populate_exp_subsub)
+        
+        ttk.Label(center_frame, text="Sub-Subcategory:").grid(row=3, column=0, sticky="w", padx=5)
+        self.exp_subsub = ttk.Combobox(center_frame, state="readonly")
+        self.exp_subsub.grid(row=3, column=1, sticky="ew", padx=5)
+        
+        self.exp_amt_frame = ttk.Frame(center_frame)
+        self.exp_amt_frame.grid(row=4, column=0, columnspan=2, pady=5)
+        ttk.Label(self.exp_amt_frame, text="Amount:").pack(side="left")
+        self.exp_amt = ttk.Entry(self.exp_amt_frame, width=10)
+        self.exp_amt.pack(side="left", padx=5)
+        
+        self.exp_rate_frame = ttk.Frame(center_frame)
+        self.exp_rate_frame.grid(row=5, column=0, columnspan=2, pady=5)
+        self.lbl_exp_rate = ttk.Label(self.exp_rate_frame, text="Rate (1 EUR = ? Tk):")
+        self.lbl_exp_rate.pack(side="left")
+        self.exp_rate = ttk.Entry(self.exp_rate_frame, width=10)
+        self.exp_rate.insert(0, str(int(self.dm.DEFAULT_RATE))) # Show 100
+        self.exp_rate.pack(side="left", padx=5)
+        
+        ttk.Label(center_frame, text="Date:").grid(row=7, column=0, sticky="w", padx=5)
+        self.exp_date = ttk.Entry(center_frame)
+        self.exp_date.insert(0, today)
+        self.exp_date.grid(row=7, column=1, sticky="ew", padx=5)
+        
+        ttk.Button(center_frame, text="Save Expense", command=self.add_expense_action).grid(row=8, column=0, columnspan=2, pady=10)
+
+        # Right: Investment
+        right_frame = ttk.LabelFrame(mid_frame, text="Investment / Return")
+        right_frame.grid(row=0, column=2, sticky="nsew", padx=5)
+        
+        self.inv_type = tk.StringVar(value="Investment")
+        ttk.Radiobutton(right_frame, text="Add Investment", variable=self.inv_type, value="Investment", command=self.toggle_inv_fields).grid(row=0, column=0, sticky="w")
+        ttk.Radiobutton(right_frame, text="Add Return", variable=self.inv_type, value="Return", command=self.toggle_inv_fields).grid(row=0, column=1, sticky="w")
+        
+        ttk.Label(right_frame, text="Category:").grid(row=1, column=0, sticky="w", padx=5)
+        self.inv_cat = ttk.Combobox(right_frame, values=["Karje hasana", "Stocks", "Property", "Business", "Other"])
+        self.inv_cat.current(0)
+        self.inv_cat.grid(row=1, column=1, sticky="ew", padx=5)
+        self.inv_cat.bind("<<ComboboxSelected>>", self.toggle_kh_fields)
+        
+        self.kh_name_frame = ttk.Frame(right_frame)
+        ttk.Label(self.kh_name_frame, text="Name:").grid(row=0, column=0)
+        self.kh_name = ttk.Entry(self.kh_name_frame, width=15)
+        self.kh_name.grid(row=0, column=1)
+        
+        self.kh_addr_frame = ttk.Frame(right_frame)
+        ttk.Label(self.kh_addr_frame, text="Address:").grid(row=0, column=0)
+        self.kh_addr = ttk.Entry(self.kh_addr_frame, width=15)
+        self.kh_addr.grid(row=0, column=1)
+        
+        ttk.Label(right_frame, text="Amount (EUR):").grid(row=4, column=0, sticky="w", padx=5)
+        self.inv_amt = ttk.Entry(right_frame)
+        self.inv_amt.grid(row=4, column=1, padx=5)
+        
+        ttk.Label(right_frame, text="Date:").grid(row=5, column=0, sticky="w", padx=5)
+        self.inv_date = ttk.Entry(right_frame)
+        self.inv_date.insert(0, today)
+        self.inv_date.grid(row=5, column=1, padx=5)
+        
+        ttk.Label(right_frame, text="Description:").grid(row=6, column=0, sticky="nw", padx=5)
+        self.inv_desc = tk.Text(right_frame, height=3, width=20)
+        self.inv_desc.grid(row=6, column=1, padx=5)
+        
+        ttk.Button(right_frame, text="Save Transaction", command=self.add_investment_action).grid(row=7, column=0, columnspan=2, pady=10)
+        
+        # Initial UI Updates
+        self.populate_exp_cats()
+        self.toggle_kh_fields()
+        self.toggle_inv_fields()
+
+        mid_frame.columnconfigure(0, weight=1)
+        mid_frame.columnconfigure(1, weight=1)
+        mid_frame.columnconfigure(2, weight=1)
+        mid_frame.rowconfigure(0, weight=1)
+
+        # --- Bottom Section: Summary ---
+        bot_frame = ttk.LabelFrame(self.tab1, text="Financial Summary")
+        bot_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        # --- NEW: Summary Year Filter Control ---
+        sum_ctrl_frame = ttk.Frame(bot_frame)
+        sum_ctrl_frame.pack(side="left", padx=5, pady=5)
+        ttk.Label(sum_ctrl_frame, text="Year:").pack(side="left")
+        self.summary_year_filter = ttk.Combobox(sum_ctrl_frame, values=["All"] + list(range(2020, 2030)), width=6, state="readonly")
+        self.summary_year_filter.current(0)
+        self.summary_year_filter.pack(side="left", padx=5)
+        # Bind change to update summary immediately
+        self.summary_year_filter.bind("<<ComboboxSelected>>", lambda e: self.update_summary())
+        
+        # Apply style for smaller font
+        self.summary_tree = ttk.Treeview(bot_frame, style="Summary.Treeview", show="headings")
+        self.summary_tree.pack(fill="both", expand=True)
+
+    # --- Tab 1 Logic Helpers ---
+    def update_initial_bal(self):
         try:
-            with open("finance_data_backup.csv", 'w', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                writer.writerow(['Type', 'Date', 'Category', 'Subcategory', 'Sub-Subcategory', 'Amount', 'Currency', 'Details'])
-                
-                # Euro Expenses
-                for t in self.transactions:
-                    writer.writerow(['Euro Expense', t.get('date'), t.get('category'), t.get('subcategory'), t.get('subsubcategory'), t.get('amount'), 'EUR', t.get('location', '')])
-                
-                # BD Expenses
-                for t in self.bd_transactions:
-                    writer.writerow(['BD Expense', t.get('date'), t.get('category'), t.get('subcategory'), t.get('subsubcategory'), t.get('amount'), 'BDT', ''])
-                
-                # Income
-                for i in self.income_sources:
-                    writer.writerow(['Income', i.get('date'), 'Income', i.get('source'), '', i.get('amount'), 'EUR', ''])
-        except Exception as e:
-            print(f"Auto-CSV Error: {e}")
-
-    def update_subsubcategory_table(self):
-        """Sub-Subcategory View: Month rows vs Items in Columns"""
-        if not hasattr(self, 'subsub_tree'): return
-
-        year = self.db_year_var.get()
-        cat = self.subsub_filter_cat_var.get()
-        sub = self.subsub_filter_sub_var.get()
-        
-        if not cat or not sub:
-            messagebox.showwarning("Filter", "Please select Category and Subcategory")
-            return
-
-        # Get the sub-sub items list (e.g. ['Edeka', 'Aldi'])
-        ss_list = self.subcategories.get(cat, {}).get(sub, [])
-        if not isinstance(ss_list, list): ss_list = []
-
-        # Calculate Matrix
-        matrix = defaultdict(lambda: defaultdict(float))
-        for t in self.transactions:
-            d_parts = t.get('date', '').split('/')
-            if len(d_parts) == 3 and d_parts[2] == year:
-                if t.get('category') == cat and t.get('subcategory') == sub:
-                    try:
-                        m_idx = int(d_parts[1])
-                        ss_name = t.get('subsubcategory', '')
-                        if ss_name in ss_list:
-                            matrix[m_idx][ss_name] += float(t.get('amount', 0))
-                    except: continue
-
-        # RE-INITIALIZE AND RENDER using the fixed helper
-        self._render_database_rows(self.subsub_tree, ss_list, matrix)
-        
-    
-    
-    def auto_save(self):
-        self.save_data()
-        self.root.after(30000, self.auto_save)
-    
-    def create_widgets(self):
-        self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill='both', expand=True, padx=5, pady=5)
-        
-        # Tab 1: Input
-        self.input_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.input_tab, text="Input")
-        self.create_input_tab()
-        
-        # Tab 2: Database
-        self.database_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.database_tab, text="Database")
-        self.create_database_tab()
-        
-        # Tab 3: Investments
-        self.investment_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.investment_tab, text="Investments")
-        self.create_investment_tab()
-        
-        # Tab 4: BD Section
-        self.bd_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.bd_tab, text="BD Section")
-        self.create_bd_tab()
-        
-        # Tab 5: Analysis
-        self.analysis_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.analysis_tab, text="Analysis")
-        self.create_analysis_tab() # RESTORED
-        
-    def set_initial_balance(self):
-        try:
-            val = float(self.initial_bal_entry.get())
-            self.initial_euro_balance = val
-            self.save_data()
-            self.update_input_summary_table()
-            messagebox.showinfo("Success", f"Initial balance set to €{val:.2f}")
+            val = float(self.init_bal_entry.get())
+            self.dm.set_initial_balance(val)
+            self.update_summary()
+            self.refresh_all_tabs()
         except ValueError:
-            messagebox.showerror("Error", "Please enter a valid number for initial balance.")
+            messagebox.showerror("Error", "Invalid amount")
+
+    def add_bd_deposit_action(self):
+        try:
+            amt_tk = float(self.bd_deposit_amt.get())
+            rate = float(self.bd_deposit_rate.get())
             
-    def create_input_tab(self):
-        # Header
-        header_frame = ttk.Frame(self.input_tab, height=150) 
-        header_frame.pack(fill='x', padx=10, pady=5)
-        header_frame.pack_propagate(False)
-        
-        header_canvas = tk.Canvas(header_frame, height=150, bg='#E8F5E9', highlightthickness=0)
-        header_canvas.pack(fill='both', expand=True)
-        
-        # Sun
-        sun_x, sun_y = 120, 40
-        header_canvas.create_oval(sun_x-25, sun_y-25, sun_x+25, sun_y+25, 
-                                 fill='#FFD54F', outline='#FFA000', width=2)
-        for angle in range(0, 360, 45):
-            angle_rad = math.radians(angle)
-            x1 = sun_x + 30 * math.cos(angle_rad)
-            y1 = sun_y + 30 * math.sin(angle_rad)
-            x2 = sun_x + 40 * math.cos(angle_rad)
-            y2 = sun_y + 40 * math.sin(angle_rad)
-            header_canvas.create_line(x1, y1, x2, y2, fill='#FFA000', width=3)
-        
-        # Tree
-        trunk_x, trunk_y = 80, 120
-        header_canvas.create_rectangle(trunk_x-8, trunk_y-20, trunk_x+8, trunk_y, 
-                                       fill='#6D4C41', outline='#4E342E', width=2)
-        foliage_positions = [(trunk_x, trunk_y-30, 20), (trunk_x-15, trunk_y-25, 18), 
-                             (trunk_x+15, trunk_y-25, 18), (trunk_x-8, trunk_y-40, 16), 
-                             (trunk_x+8, trunk_y-40, 16), (trunk_x, trunk_y-50, 15)]
-        for x, y, r in foliage_positions:
-            header_canvas.create_oval(x-r, y-r, x+r, y+r, 
-                                     fill='#4CAF50', outline='#388E3C', width=1)
-        
-        # Clock
-        clock_x, clock_y = 400, 75
-        self.header_clock_canvas = tk.Canvas(header_canvas, width=120, height=120, 
-                                            bg='#E8F5E9', highlightthickness=0)
-        header_canvas.create_window(clock_x, clock_y, window=self.header_clock_canvas)
-        
-        blessing_text = "In name of Allah,\nwho is Most Gracious and Most Merciful"
-        header_canvas.create_text(700, 75, text=blessing_text, 
-                                 font=('Times New Roman', 14, 'italic bold'),
-                                 fill='#1B5E20', justify='center')
-        
-        # Date Display
-        date_frame = ttk.LabelFrame(self.input_tab, text="Current Date & Time", padding=10)
-        date_frame.pack(fill='x', padx=10, pady=5)
-        
-        date_info_frame = ttk.Frame(date_frame)
-        date_info_frame.pack(padx=20, fill='x')
-        
-        current_date = datetime.now()
-        self.weekday_label = ttk.Label(date_info_frame, text=f"Day: {current_date.strftime('%A')}", 
-                                      font=('Arial', 11, 'bold'))
-        self.weekday_label.pack(side='left', padx=20)
-        self.date_label = ttk.Label(date_info_frame, text=f"Date: {current_date.strftime('%d/%m/%Y')}", 
-                                   font=('Arial', 10))
-        self.date_label.pack(side='left', padx=20)
-        self.month_label = ttk.Label(date_info_frame, text=f"Month: {current_date.strftime('%B %Y')}", 
-                                    font=('Arial', 10))
-        self.month_label.pack(side='left', padx=20)
-        self.time_label = ttk.Label(date_info_frame, text=f"Time: {current_date.strftime('%H:%M:%S')}", 
-                                   font=('Arial', 10))
-        self.time_label.pack(side='left', padx=20)
-        
-        self.update_clocks()
-        
-        # Category Management
-        cat_frame = ttk.LabelFrame(self.input_tab, text="Category Management", padding=10)
-        cat_frame.pack(fill='x', padx=10, pady=5)
-        ttk.Button(cat_frame, text="Manage Subcategories (Sub-Sub)", command=self.manage_subcategories).pack(side='left', padx=5)
-        ttk.Button(cat_frame, text="Add Category", command=self.add_category).pack(side='left', padx=5)
-        
-        # Forms Container
-        forms_container = ttk.Frame(self.input_tab)
-        forms_container.pack(fill='both', expand=True, padx=10, pady=5)
-        
-        # Income Section
-        income_frame = ttk.LabelFrame(forms_container, text="Add Income", padding=10)
-        income_frame.pack(side='left', fill='both', expand=True, padx=5)
-        
-        ttk.Label(income_frame, text="Source:").grid(row=0, column=0, sticky='w', pady=2)
-        self.income_source_var = tk.StringVar(value="Salary")
-        income_source_combo = ttk.Combobox(income_frame, textvariable=self.income_source_var, 
-                                           values=["Salary", "Profit", "Return", "Other"])
-        income_source_combo.grid(row=0, column=1, sticky='ew', pady=2, padx=5)
-        
-        ttk.Label(income_frame, text="Amount (€):").grid(row=1, column=0, sticky='w', pady=2)
-        self.income_amount = ttk.Entry(income_frame)
-        self.income_amount.grid(row=1, column=1, sticky='ew', pady=2, padx=5)
-        
-        ttk.Label(income_frame, text="Date:").grid(row=2, column=0, sticky='w', pady=2)
-        self.income_date = DateEntry(income_frame, date_pattern='dd/mm/yyyy')
-        self.income_date.grid(row=2, column=1, sticky='ew', pady=2, padx=5)
-        
-        ttk.Button(income_frame, text="Add Income", command=self.add_income).grid(row=3, column=0, columnspan=2, pady=10)
-        self.current_month_income_label = ttk.Label(income_frame, text="Current Month Income: €0.00", 
-                                                     font=('Arial', 11, 'bold'))
-        self.current_month_income_label.grid(row=4, column=0, columnspan=2, pady=5)
-        
-        # Add these lines at the bottom of the income_frame (around line 430)
-        ttk.Separator(income_frame, orient='horizontal').grid(row=5, column=0, columnspan=2, sticky='ew', pady=10)
-        
-        ttk.Label(income_frame, text="Set Initial Balance (€):").grid(row=6, column=0, sticky='w', pady=2)
-        self.initial_bal_entry = ttk.Entry(income_frame)
-        self.initial_bal_entry.insert(0, str(self.initial_euro_balance))
-        self.initial_bal_entry.grid(row=6, column=1, sticky='ew', pady=2, padx=5)
-        
-        ttk.Button(income_frame, text="Update Initial Balance", 
-                   command=self.set_initial_balance).grid(row=7, column=0, columnspan=2, pady=5)
-        
-        # Expenditure Section
-        expense_frame = ttk.LabelFrame(forms_container, text="Add Expenditure", padding=10)
-        expense_frame.pack(side='left', fill='both', expand=True, padx=5)
-        
-        ttk.Label(expense_frame, text="Category:").grid(row=0, column=0, sticky='w', pady=2)
-        self.expense_category_var = tk.StringVar()
-        self.expense_category_combo = ttk.Combobox(expense_frame, textvariable=self.expense_category_var)
-        self.expense_category_combo.grid(row=0, column=1, sticky='ew', pady=2, padx=5)
-        self.expense_category_combo.bind('<<ComboboxSelected>>', self.update_subcategory_combo)
-        
-        ttk.Label(expense_frame, text="Subcategory:").grid(row=1, column=0, sticky='w', pady=2)
-        self.expense_subcategory_var = tk.StringVar()
-        self.expense_subcategory_combo = ttk.Combobox(expense_frame, textvariable=self.expense_subcategory_var)
-        self.expense_subcategory_combo.grid(row=1, column=1, sticky='ew', pady=2, padx=5)
-        self.expense_subcategory_combo.bind('<<ComboboxSelected>>', self.update_subsubcategory_combo)
-        
-        ttk.Label(expense_frame, text="Sub-subcategory:").grid(row=2, column=0, sticky='w', pady=2)
-        self.expense_subsubcategory_var = tk.StringVar()
-        self.expense_subsubcategory_combo = ttk.Combobox(expense_frame, textvariable=self.expense_subsubcategory_var)
-        self.expense_subsubcategory_combo.grid(row=2, column=1, sticky='ew', pady=2, padx=5)
-        
-        ttk.Label(expense_frame, text="Location:").grid(row=3, column=0, sticky='w', pady=2)
-        self.expense_location = ttk.Entry(expense_frame)
-        self.expense_location.grid(row=3, column=1, sticky='ew', pady=2, padx=5)
-        
-        ttk.Label(expense_frame, text="Amount (€):").grid(row=4, column=0, sticky='w', pady=2)
-        self.expense_amount = ttk.Entry(expense_frame)
-        self.expense_amount.grid(row=4, column=1, sticky='ew', pady=2, padx=5)
-        
-        ttk.Label(expense_frame, text="Date:").grid(row=5, column=0, sticky='w', pady=2)
-        self.expense_date = DateEntry(expense_frame, date_pattern='dd/mm/yyyy')
-        self.expense_date.grid(row=5, column=1, sticky='ew', pady=2, padx=5)
-        
-        ttk.Button(expense_frame, text="Add Expenditure", command=self.add_expenditure).grid(row=6, column=0, columnspan=2, pady=10)
-        
-        # Summary Table
-        summary_frame = ttk.LabelFrame(self.input_tab, text="Financial Summary (Monthly Matrix)", padding=10)
-        summary_frame.pack(fill='both', expand=True, padx=10, pady=5)
-        
-        self.current_bd_balance_label = ttk.Label(summary_frame, text="BD Current Balance: 0.00 Taka", 
-                                               font=('Arial', 12, 'bold'), foreground='green')
-        self.current_bd_balance_label.pack(side='right', padx=10)
-        
-        columns = ('month', 'income', 'expense', 'net_invest', 'bd_expense', 'balance')
-        self.summary_tree = ttk.Treeview(summary_frame, columns=columns, show='headings', height=8)
-        
-        self.summary_tree.heading('month', text='Month')
-        self.summary_tree.heading('income', text='Income (€)')
-        self.summary_tree.heading('expense', text='Expense (€)')
-        self.summary_tree.heading('net_invest', text='Investment (€)')
-        self.summary_tree.heading('bd_expense', text='BD Exp (Tk)')
-        self.summary_tree.heading('balance', text='Balance (€)')
-        
-        self.summary_tree.column('month', width=100, anchor='center')
-        self.summary_tree.column('income', width=100, anchor='center')
-        self.summary_tree.column('expense', width=100, anchor='center')
-        self.summary_tree.column('net_invest', width=100, anchor='center')
-        self.summary_tree.column('bd_expense', width=100, anchor='center')
-        self.summary_tree.column('balance', width=100, anchor='center')
-        
-        self.summary_tree.tag_configure('even', background='#ffffff')
-        self.summary_tree.tag_configure('odd', background='#f2f2f2')
-        self.summary_tree.tag_configure('total', background='#d0e0ff', font=('Arial', 10, 'bold'))
-        self.summary_tree.tag_configure('average', background='#e6e6fa', font=('Arial', 10, 'bold'))
-        
-        vs = ttk.Scrollbar(summary_frame, orient="vertical", command=self.summary_tree.yview)
-        self.summary_tree.configure(yscrollcommand=vs.set)
-        
-        self.summary_tree.pack(side='left', fill='both', expand=True)
-        vs.pack(side='right', fill='y')
-        
-        self.update_category_combos()
-        self.update_current_month_income()
-        self.update_input_summary_table()
-        
-        
+            self.dm.add_bd_deposit(amt_tk)
+            self.update_summary()
+            self.refresh_all_tabs()
+            self.bd_deposit_amt.delete(0, tk.END)
+        except ValueError:
+            messagebox.showerror("Error", "Invalid inputs")
 
-    # --- Defensive Updates to prevent Crash ---
-    def update_subcategory_combo(self, event=None):
-        cat = self.expense_category_var.get()
-        cat_data = self.subcategories.get(cat, {})
+    def add_income_action(self):
+        source = self.inc_src.get()
+        amt = self.inc_amt.get()
+        date = self.inc_date.get()
+        if not amt or not date: return messagebox.showerror("Error", "Missing Info")
+        self.dm.add_income(source, amt, date)
+        self.update_summary()
+        self.refresh_all_tabs()
+
+    def open_category_manager(self):
+        win = tk.Toplevel(self.root)
+        win.title("Category Manager")
+        win.geometry("500x400")
         
-        if isinstance(cat_data, dict):
-            subs = list(cat_data.keys())
-        elif isinstance(cat_data, list):
-            subs = cat_data
-        else:
-            subs = []
+        region = self.cat_region.get()
+        cat_data = self.dm.get_categories(region).copy()
+        
+        tree = ttk.Treeview(win)
+        tree.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        def populate_tree(parent, d):
+            if not isinstance(d, dict): return
+            for k, v in sorted(d.items()):
+                node = tree.insert(parent, "end", text=k, values=(k,))
+                populate_tree(node, v)
+        
+        def refresh():
+            tree.delete(*tree.get_children())
+            populate_tree("", cat_data)
             
-        self.expense_subcategory_combo['values'] = subs
-        self.expense_subcategory_var.set('')
-        self.update_subsubcategory_combo()
-
-    def update_subsubcategory_combo(self, event=None):
-        cat = self.expense_category_var.get()
-        sub = self.expense_subcategory_var.get()
+        refresh()
         
-        sub_data = self.subcategories.get(cat, {}).get(sub, [])
+        btn_frame = ttk.Frame(win)
+        btn_frame.pack(fill="x", padx=10, pady=5)
         
-        if isinstance(sub_data, list):
-            pass
-        else:
-            sub_data = []
+        def on_add():
+            sel = tree.focus()
+            name = simpledialog.askstring("Add", "Name:")
+            if not name: return
             
-        self.expense_subsubcategory_combo['values'] = sub_data
-        self.expense_subsubcategory_var.set('')
-    
-        
-    def update_input_summary_table(self):
-        """Refreshes the Matrix with the specific Balance formula:
-           Balance = Income - Expense + Net_Invest - (BD_Expense / Conversion)
-        """
-        if not hasattr(self, 'summary_tree'): return
-        
-        for item in self.summary_tree.get_children():
-            self.summary_tree.delete(item)
-        
-        # Header display for BD
-        euro_eq = self.bd_balance / self.bd_conversion_rate if self.bd_conversion_rate > 0 else 0
-        self.current_bd_balance_label.config(
-            text=f"BD Balance: {self.bd_balance:.2f} Taka (≈{euro_eq:.2f} €)"
-        )
-
-        current_year = self.db_year_var.get()
-        rate = self.bd_conversion_rate if self.bd_conversion_rate > 0 else 1.0
-        
-        # Use a dictionary to store all values for 12 months
-        months_data = defaultdict(lambda: {
-            'income': 0.0, 'expense': 0.0, 'invest_out': 0.0, 
-            'returns': 0.0, 'bd_expense': 0.0
-        })
-
-        # --- 1. Aggregation (Filter by current_year) ---
-        for inc in self.income_sources:
-            if inc['date'].endswith(current_year):
-                m = int(inc['date'].split('/')[1])
-                months_data[m]['income'] += float(inc['amount'])
-        
-        for exp in self.transactions:
-            if exp['date'].endswith(current_year) and exp.get('category') != "Savings cost":
-                m = int(exp['date'].split('/')[1])
-                months_data[m]['expense'] += float(exp['amount'])
+            if not sel:
+                cat_data[name] = {}
+            else:
+                path = []
+                curr = sel
+                while curr:
+                    path.insert(0, tree.item(curr, "values")[0])
+                    curr = tree.parent(curr)
                 
-        for inv in self.investments:
-            if inv['date'].endswith(current_year):
-                m = int(inv['date'].split('/')[1])
-                months_data[m]['invest_out'] += float(inv['amount'])
-        
-        for ret in self.investment_returns:
-            if ret['date'].endswith(current_year):
-                m = int(ret['date'].split('/')[1])
-                months_data[m]['returns'] += float(ret['amount'])
+                d_target = cat_data
+                for p in path:
+                    if p in d_target: d_target = d_target[p]
+                d_target[name] = {}
+            refresh()
+
+        def on_edit():
+            sel = tree.focus()
+            if not sel: return
+            old_name = tree.item(sel, "values")[0]
+            new_name = simpledialog.askstring("Edit", "New name:", initialvalue=old_name)
+            if not new_name: return
+            
+            path = []
+            curr = sel
+            while curr:
+                path.insert(0, tree.item(curr, "values")[0])
+                curr = tree.parent(curr)
+            
+            d_target = cat_data
+            for p in path[:-1]:
+                if p in d_target: d_target = d_target[p]
+            
+            d_target[new_name] = d_target.pop(old_name)
+            refresh()
+
+        def on_delete():
+            sel = tree.focus()
+            if not sel: return
+            name = tree.item(sel, "values")[0]
+            if not messagebox.askyesno("Confirm", f"Delete {name}?"): return
+            
+            path = []
+            curr = sel
+            while curr:
+                path.insert(0, tree.item(curr, "values")[0])
+                curr = tree.parent(curr)
                 
-        for bd_exp in self.bd_transactions:
-            if bd_exp['date'].endswith(current_year):
-                m = int(bd_exp['date'].split('/')[1])
-                months_data[m]['bd_expense'] += float(bd_exp['amount'])
+            d_target = cat_data
+            for p in path[:-1]:
+                if p in d_target: d_target = d_target[p]
+            
+            del d_target[path[-1]]
+            refresh()
 
-        # --- 2. Calculation and Rendering ---
-        month_names = ["January", "February", "March", "April", "May", "June", 
-                       "July", "August", "September", "October", "November", "December"]
+        def on_save():
+            self.dm.update_category_structure(region, cat_data)
+            self.populate_exp_cats()
+            messagebox.showinfo("Success", "Categories Saved!")
+            win.destroy()
+
+        ttk.Button(btn_frame, text="Add Sub", command=on_add).pack(side="left", padx=2)
+        ttk.Button(btn_frame, text="Edit Name", command=on_edit).pack(side="left", padx=2)
+        ttk.Button(btn_frame, text="Delete", command=on_delete).pack(side="left", padx=2)
+        ttk.Button(btn_frame, text="Save & Close", command=on_save).pack(side="right", padx=2)
+
+    def populate_exp_cats(self, event=None):
+        region = self.exp_region.get()
+        cats = list(self.dm.get_categories(region).keys())
+        self.exp_cat['values'] = cats
+        if cats: self.exp_cat.current(0)
+        self.populate_exp_sub()
         
-        totals = defaultdict(float)
-        for i, m_name in enumerate(month_names):
-            m_num = i + 1
-            d = months_data[m_num]
-            
-            # MATH LOGIC:
-            # 1. Net Investment Income
-            net_invest_inc = d['returns'] - d['invest_out']
-            
-            # 2. Convert Taka expense to Euro for the balance calculation
-            bd_exp_euro = d['bd_expense'] / rate
-            
-            # 3. Final Formula: Income - Expense + Net_Invest - BD_Exp(converted)
-            month_balance = d['income'] - d['expense'] + net_invest_inc - bd_exp_euro
-            
-            self.summary_tree.insert('', 'end', values=(
-                m_name,
-                f"{d['income']:.2f}",
-                f"{d['expense']:.2f}",
-                f"{net_invest_inc:.2f}",
-                f"{d['bd_expense']:.0f}", # Shown in Taka
-                f"{month_balance:.2f}"   # Result in Euro
-            ), tags=('even' if i % 2 == 0 else 'odd'))
-            
-            # Update Grand Totals (Summing everything for the year)
-            totals['income'] += d['income']
-            totals['expense'] += d['expense']
-            totals['net_invest'] += net_invest_inc
-            totals['bd_expense'] += d['bd_expense']
-            totals['balance'] += month_balance
-
-        # --- 3. Final Footer Rows ---
-        
-        total_bal_with_initial = totals['balance'] + self.initial_euro_balance
-        
-        self.summary_tree.insert('', 'end', values=(
-            "TOTAL", 
-            f"{totals['income']:.2f}", 
-            f"{totals['expense']:.2f}",
-            f"{totals['net_invest']:.2f}", 
-            f"{totals['bd_expense']:.0f}",
-            f"{total_bal_with_initial:.2f}" # This now includes the starting money
-        ), tags=('summary',))
-
-        self.summary_tree.insert('', 'end', values=(
-            "AVERAGE", 
-            f"{totals['income']/12:.2f}", 
-            f"{totals['expense']/12:.2f}",
-            f"{totals['net_invest']/12:.2f}", 
-            f"{totals['bd_expense']/12:.0f}",
-            f"{totals['balance']/12:.2f}"
-        ), tags=('summary',))
-
-        self.summary_tree.tag_configure('summary', background='#d0e0ff', font=('Arial', 9, 'bold'))
-        
-  
-
-    # --- Helper Methods (Input) ---
-    # --- INPUT SECTION HELPER UPDATERS (FIXED) ---
-
-    def mgr_update_subs(self, event=None):
-        """Updates the subcategory dropdown based on chosen category and forces selection."""
-        cat = self.mgr_cat_var.get()
-        # Ensure data is a dict
-        if cat not in self.subcategories or not isinstance(self.subcategories[cat], dict):
-            self.subcategories[cat] = {}
-            
-        subs = list(self.subcategories[cat].keys())
-        self.mgr_sub_combo['values'] = subs
-        
-        # FIX: Force selection of the first subcategory if list isn't empty
-        if subs:
-            current = self.mgr_sub_var.get()
-            if not current or current not in subs:
-                self.mgr_sub_combo.current(0)
+        if region == "BD":
+            self.exp_rate_frame.grid(row=5, column=0, columnspan=2, pady=5, sticky="w")
+            self.lbl_exp_rate.config(text="Rate (1 EUR = ? Tk):")
+            self.exp_rate.config(state="normal")
+            self.exp_rate.delete(0, tk.END)
+            self.exp_rate.insert(0, str(int(self.dm.DEFAULT_RATE)))
+            self.exp_amt_frame.children['!label'].config(text="Amount (BD Tk):")
         else:
-            self.mgr_sub_var.set('')
-            
-        self.refresh_mgr_list()
-    
-    def manage_subcategories(self):
-        """Hierarchy Manager with full Rename and Delete functionality"""
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Edit & Manage Hierarchy")
-        dialog.geometry("1100x650")
-        dialog.grab_set()
-        
-        main_frame = ttk.Frame(dialog, padding=10)
-        main_frame.pack(fill='both', expand=True)
-        
-        # --- LEFT: CATEGORY & SUBCATEGORY MANAGEMENT ---
-        left_panel = ttk.LabelFrame(main_frame, text="1. Main Categories & Subcategories", padding=10)
-        left_panel.pack(side='left', fill='y', padx=5)
-        
-        # Category Controls
-        ttk.Label(left_panel, text="Select Main Category:").pack(anchor='w')
-        cat_row = ttk.Frame(left_panel)
-        cat_row.pack(fill='x', pady=2)
-        
-        self.mgr_cat_combo = ttk.Combobox(cat_row, textvariable=self.mgr_cat_var, values=self.categories, state="readonly")
-        self.mgr_cat_combo.pack(side='left', fill='x', expand=True)
-        ttk.Button(cat_row, text="✎", width=3, command=self.rename_category).pack(side='left', padx=2)
-        ttk.Button(cat_row, text="❌", width=3, command=self.delete_category).pack(side='left', padx=2)
-        self.mgr_cat_combo.bind("<<ComboboxSelected>>", self.mgr_update_subs)
-        
-        ttk.Separator(left_panel, orient='horizontal').pack(fill='x', pady=15)
-        
-        # Subcategory Controls
-        ttk.Label(left_panel, text="Select Subcategory:").pack(anchor='w')
-        sub_row = ttk.Frame(left_panel)
-        sub_row.pack(fill='x', pady=2)
-        
-        self.mgr_sub_combo = ttk.Combobox(sub_row, textvariable=self.mgr_sub_var, state="readonly")
-        self.mgr_sub_combo.pack(side='left', fill='x', expand=True)
-        ttk.Button(sub_row, text="✎", width=3, command=self.rename_subcategory).pack(side='left', padx=2)
-        ttk.Button(sub_row, text="❌", width=3, command=self.delete_subcategory).pack(side='left', padx=2)
-        self.mgr_sub_combo.bind("<<ComboboxSelected>>", self.refresh_mgr_list)
-    
-        # Add New Subcategory
-        ttk.Label(left_panel, text="Add New Subcategory:", font=('', 9, 'italic')).pack(anchor='w', pady=(15,0))
-        self.new_sub_entry = ttk.Entry(left_panel)
-        self.new_sub_entry.pack(fill='x', pady=5)
-        ttk.Button(left_panel, text="+ Create Subcategory", command=self.mgr_add_subcategory).pack(fill='x')
-    
-        # --- RIGHT: SUB-SUBCATEGORY MANAGEMENT ---
-        right_panel = ttk.LabelFrame(main_frame, text="2. Sub-Subcategories", padding=10)
-        right_panel.pack(side='left', fill='both', expand=True, padx=5)
-        
-        add_ss_frame = ttk.Frame(right_panel)
-        add_ss_frame.pack(fill='x', pady=5)
-        self.new_subsub_entry = ttk.Entry(add_ss_frame)
-        self.new_subsub_entry.pack(side='left', fill='x', expand=True, padx=5)
-        ttk.Button(add_ss_frame, text="+ Add Item", command=self.mgr_add_sub_subcategory).pack(side='right')
-    
-        self.mgr_tree = ttk.Treeview(right_panel, columns=('Name'), show='headings')
-        self.mgr_tree.heading('Name', text='Current Sub-Subcategory Items')
-        self.mgr_tree.pack(fill='both', expand=True, pady=5)
-        
-        btn_ss_frame = ttk.Frame(right_panel)
-        btn_ss_frame.pack(fill='x')
-        ttk.Button(btn_ss_frame, text="Rename Selected", command=self.rename_subsubcategory).pack(side='left', padx=5)
-        ttk.Button(btn_ss_frame, text="Delete Selected", command=self.delete_subsubcategory).pack(side='left', padx=5)
-        
-        # FIX: Force initial selection here as well
-        if self.categories:
-            self.mgr_cat_combo.current(0)
-            self.mgr_update_subs()
-    
-    
-    def propagate_name_change(self, level, old_val, new_val, parent_cat=None, parent_sub=None):
-        """Standard helper to ensure existing database records match new names"""
-        count = 0
-        all_lists = [self.transactions, self.bd_transactions]
-        for t_list in all_lists:
-            for t in t_list:
-                if level == 'category' and t.get('category') == old_val:
-                    t['category'] = new_val
-                    count += 1
-                elif level == 'subcategory' and t.get('category') == parent_cat and t.get('subcategory') == old_val:
-                    t['subcategory'] = new_val
-                    count += 1
-                elif level == 'subsubcategory' and t.get('category') == parent_cat and t.get('subcategory') == parent_sub and t.get('subsubcategory') == old_val:
-                    t['subsubcategory'] = new_val
-                    count += 1
-        return count
+            self.exp_rate_frame.grid_forget()
+            self.exp_amt_frame.children['!label'].config(text="Amount (EUR):")
 
-    # --- CATEGORY ACTIONS ---
-    def rename_category(self):
-        old_name = self.mgr_cat_var.get()
-        if not old_name: return
-        new_name = simpledialog.askstring("Rename", f"Rename Category '{old_name}' to:", initialvalue=old_name)
-        if new_name and new_name != old_name:
-            idx = self.categories.index(old_name)
-            self.categories[idx] = new_name
-            self.subcategories[new_name] = self.subcategories.pop(old_name)
-            self.propagate_name_change('category', old_name, new_name)
-            self.save_data()
-            self.mgr_cat_combo['values'] = self.categories
-            self.mgr_cat_var.set(new_name)
-            self.update_category_combos()
-            messagebox.showinfo("Success", "Category renamed throughout database.")
-
-    def delete_category(self):
-        cat = self.mgr_cat_var.get()
-        if not cat or not messagebox.askyesno("Confirm", f"Delete '{cat}' and ALL its transaction history?"): return
-        self.categories.remove(cat)
-        self.subcategories.pop(cat, None)
-        self.transactions = [t for t in self.transactions if t.get('category') != cat]
-        self.bd_transactions = [t for t in self.bd_transactions if t.get('category') != cat]
-        self.save_data()
-        self.mgr_cat_combo['values'] = self.categories
-        self.mgr_cat_var.set('')
-        self.mgr_update_subs()
-
-    # --- SUBCATEGORY ACTIONS ---
-    def rename_subcategory(self):
-        cat = self.mgr_cat_var.get()
-        old_sub = self.mgr_sub_var.get()
-        if not cat or not old_sub: return
-        new_sub = simpledialog.askstring("Rename", f"Rename Subcategory '{old_sub}' to:", initialvalue=old_sub)
-        if new_sub and new_sub != old_sub:
-            self.subcategories[cat][new_sub] = self.subcategories[cat].pop(old_sub)
-            self.propagate_name_change('subcategory', old_sub, new_sub, parent_cat=cat)
-            self.save_data()
-            self.mgr_update_subs()
-            self.mgr_sub_var.set(new_sub)
-
-    def delete_subcategory(self):
-        cat = self.mgr_cat_var.get()
-        sub = self.mgr_sub_var.get()
-        if not cat or not sub or not messagebox.askyesno("Confirm", f"Delete Subcategory '{sub}'?"): return
-        self.subcategories[cat].pop(sub, None)
-        self.transactions = [t for t in self.transactions if not (t.get('category') == cat and t.get('subcategory') == sub)]
-        self.bd_transactions = [t for t in self.bd_transactions if not (t.get('category') == cat and t.get('subcategory') == sub)]
-        self.save_data()
-        self.mgr_update_subs()
-
-    # --- SUB-SUBCATEGORY ACTIONS ---
-    def rename_subsubcategory(self):
-        selection = self.mgr_tree.selection()
-        if not selection: return
-        old_val = self.mgr_tree.item(selection[0])['values'][0]
-        cat, sub = self.mgr_cat_var.get(), self.mgr_sub_var.get()
-        new_val = simpledialog.askstring("Rename", f"Rename '{old_val}' to:", initialvalue=old_val)
-        if new_val and new_val != old_val:
-            idx = self.subcategories[cat][sub].index(old_val)
-            self.subcategories[cat][sub][idx] = new_val
-            self.propagate_name_change('subsubcategory', old_val, new_val, parent_cat=cat, parent_sub=sub)
-            self.save_data()
-            self.refresh_mgr_list()
-
-    def delete_subsubcategory(self):
-        selection = self.mgr_tree.selection()
-        if not selection: return
-        val = self.mgr_tree.item(selection[0])['values'][0]
-        cat, sub = self.mgr_cat_var.get(), self.mgr_sub_var.get()
-        if messagebox.askyesno("Confirm", f"Delete item '{val}'?"):
-            self.subcategories[cat][sub].remove(val)
-            self.transactions = [t for t in self.transactions if not (t.get('category')==cat and t.get('subcategory')==sub and t.get('subsubcategory')==val)]
-            self.bd_transactions = [t for t in self.bd_transactions if not (t.get('category')==cat and t.get('subcategory')==sub and t.get('subsubcategory')==val)]
-            self.save_data()
-            self.refresh_mgr_list()
-            
-    
-
-
-    def rename_item(self, level):
-        cat = self.mgr_cat_var.get()
-        sub = self.mgr_sub_var.get()
+    def populate_exp_sub(self, event=None):
+        region = self.exp_region.get()
+        cat = self.exp_cat.get()
+        if cat:
+            subs = list(self.dm.get_categories(region).get(cat, {}).keys())
+            self.exp_sub['values'] = subs
+            if subs: self.exp_sub.current(0)
+            else: self.exp_sub.set('')
+        self.populate_exp_subsub()
         
-        if level == 'cat':
-            old = cat
-            new = simpledialog.askstring("Rename", f"Rename Category '{old}':")
-            if new:
-                self.categories[self.categories.index(old)] = new
-                self.subcategories[new] = self.subcategories.pop(old)
-                self.propagate_rename('cat', old, new)
-        elif level == 'sub':
-            old = sub
-            new = simpledialog.askstring("Rename", f"Rename Subcategory '{old}':")
-            if new:
-                self.subcategories[cat][new] = self.subcategories[cat].pop(old)
-                self.propagate_rename('sub', old, new, p_cat=cat)
-        
-        self.save_data()
-        messagebox.showinfo("Success", "Renamed successfully!")
-        
-    def propagate_name_change2(self, level, old_val, new_val, parent_cat=None, parent_sub=None):
-        """Helper to ensure existing database records match new names"""
-        count = 0
-        # Check both standard and BD transactions
-        all_lists = [self.transactions, self.bd_transactions]
-        
-        for t_list in all_lists:
-            for t in t_list:
-                if level == 'category' and t.get('category') == old_val:
-                    t['category'] = new_val
-                    count += 1
-                elif level == 'subcategory' and t.get('category') == parent_cat and t.get('subcategory') == old_val:
-                    t['subcategory'] = new_val
-                    count += 1
-                elif level == 'subsubcategory' and t.get('category') == parent_cat and t.get('subcategory') == parent_sub and t.get('subsubcategory') == old_val:
-                    t['subsubcategory'] = new_val
-                    count += 1
-        return count
+        if region == "BD":
+            self.exp_rate.config(state="normal")
 
-    
-
-    def mgr_add_subcategory(self):
-        """Adds the middle layer (Subcategory)"""
-        cat = self.mgr_cat_var.get()
-        new_sub = self.new_sub_entry.get().strip()
-        
-        if not cat:
-            messagebox.showwarning("Warning", "Please select a Category first!")
-            return
-        if not new_sub:
-            messagebox.showwarning("Warning", "Enter a subcategory name!")
-            return
-            
-        if new_sub not in self.subcategories[cat]:
-            self.subcategories[cat][new_sub] = []
-            self.save_data()
-            self.mgr_update_subs()
-            self.mgr_sub_var.set(new_sub)
-            self.refresh_mgr_list()
-            self.new_sub_entry.delete(0, 'end')
-            messagebox.showinfo("Success", f"Subcategory '{new_sub}' added!")
-        else:
-            messagebox.showwarning("Warning", "Subcategory already exists!")
-
-    def mgr_add_sub_subcategory(self):
-        """Adds the third layer (Sub-Subcategory)"""
-        cat = self.mgr_cat_var.get()
-        sub = self.mgr_sub_var.get()
-        val = self.new_subsub_entry.get().strip()
-        
-        if not cat or not sub:
-            messagebox.showwarning("Warning", "Select both Category and Subcategory!")
-            return
-        if not val:
-            return
-
-        if val not in self.subcategories[cat][sub]:
-            self.subcategories[cat][sub].append(val)
-            self.save_data()
-            self.refresh_mgr_list()
-            self.new_subsub_entry.delete(0, 'end')
-        else:
-            messagebox.showwarning("Warning", "Already exists!")
-
-    def refresh_mgr_list(self, event=None):
-        """Refreshes the treeview list of sub-subcategories"""
-        for i in self.mgr_tree.get_children():
-            self.mgr_tree.delete(i)
-            
-        cat = self.mgr_cat_var.get()
-        sub = self.mgr_sub_var.get()
-        
+    def populate_exp_subsub(self, event=None):
+        region = self.exp_region.get()
+        cat = self.exp_cat.get()
+        sub = self.exp_sub.get()
         if cat and sub:
-            items = self.subcategories.get(cat, {}).get(sub, [])
-            for item in items:
-                self.mgr_tree.insert('', 'end', values=(item,))    
-    
-    def add_category(self):
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Add Category")
-        dialog.geometry("300x100")
-        
-        ttk.Label(dialog, text="Category Name:").pack(pady=10)
-        entry = ttk.Entry(dialog, width=30)
-        entry.pack(pady=5)
-        
-        def save_category():
-            cat_name = entry.get().strip()
-            if cat_name and cat_name not in self.categories:
-                self.categories.append(cat_name)
-                self.subcategories[cat_name] = {}
-                self.update_category_combos()
-                self.update_bd_category_combos()
-                self.save_data()
-                dialog.destroy()
-                messagebox.showinfo("Success", "Category added successfully!")
-            else:
-                messagebox.showwarning("Warning", "Invalid or duplicate category name!")
-        
-        ttk.Button(dialog, text="Add", command=save_category).pack(pady=10)
+            subsubs = list(self.dm.get_categories(region).get(cat, {}).get(sub, {}).keys())
+            self.exp_subsub['values'] = subsubs
+            if subsubs: self.exp_subsub.current(0)
+            else: self.exp_subsub.set('')
 
-    def update_category_combos(self):
-        self.expense_category_combo['values'] = self.categories
-        if self.categories:
-            self.expense_category_var.set(self.categories[0])
-            self.update_subcategory_combo()
+    def add_expense_action(self):
+        region = self.exp_region.get()
+        cat = self.exp_cat.get()
+        sub = self.exp_sub.get()
+        subsub = self.exp_subsub.get()
+        amt = self.exp_amt.get()
+        rate = self.exp_rate.get()
+        date = self.exp_date.get()
+        
+        if not all([cat, amt, date]): return messagebox.showerror("Error", "Missing fields")
+        if region == "BD" and not rate: 
+            rate = 0 
+            
+        self.dm.add_expense(region, cat, sub, subsub, amt, rate, date)
+        self.update_summary()
+        self.refresh_all_tabs()
 
-    def add_income(self):
+    def toggle_kh_fields(self, event=None):
+        cat = self.inv_cat.get()
+        if cat == "Karje hasana":
+            self.kh_name_frame.grid(row=2, column=0, columnspan=2, pady=2)
+            self.kh_addr_frame.grid(row=3, column=0, columnspan=2, pady=2)
+        else:
+            self.kh_name_frame.grid_forget()
+            self.kh_addr_frame.grid_forget()
+
+    def toggle_inv_fields(self):
+        pass
+
+    def add_investment_action(self):
+        itype = self.inv_type.get()
+        cat = self.inv_cat.get()
+        amt = self.inv_amt.get()
+        date = self.inv_date.get()
+        desc = self.inv_desc.get("1.0", tk.END).strip()
+        
+        name = self.kh_name.get() if cat == "Karje hasana" else None
+        addr = self.kh_addr.get() if cat == "Karje hasana" else None
+        
+        if not amt or not date: return messagebox.showerror("Error", "Missing Amount/Date")
+        
+        self.dm.add_investment(itype, cat, amt, date, desc, name, addr)
+        self.update_summary()
+        self.refresh_all_tabs()
+
+    def update_summary(self):
+        # 1. Get Filter
         try:
-            amount = float(self.income_amount.get())
-            source = self.income_source_var.get()
-            date = self.income_date.get_date().strftime('%d/%m/%Y')
+            year_val = self.summary_year_filter.get()
+        except:
+            year_val = "All"
+
+        # 2. Prepare Dataframes (Load all, then filter)
+        inc_df = pd.DataFrame(self.dm.data["income"])
+        exp_df = pd.DataFrame(self.dm.data["expenses"])
+        inv_df = pd.DataFrame(self.dm.data["investments"])
+        
+        if not inc_df.empty:
+            inc_df["month_dt"] = pd.to_datetime(inc_df["date"])
+            inc_df["month"] = inc_df["month_dt"].dt.to_period("M")
+            inc_df["year"] = inc_df["month_dt"].dt.year
             
-            self.income_sources.append({
-                'source': source,
-                'amount': amount,
-                'date': date
-            })
+        if not exp_df.empty:
+            exp_df["month_dt"] = pd.to_datetime(exp_df["date"])
+            exp_df["month"] = exp_df["month_dt"].dt.to_period("M")
+            exp_df["year"] = exp_df["month_dt"].dt.year
+            exp_df["amount_eur"] = pd.to_numeric(exp_df["amount_eur"], errors='coerce').fillna(0)
             
-            self.income_amount.delete(0, 'end')
-            self.save_data()
-            self.update_current_month_income()
-            messagebox.showinfo("Success", "Income added successfully!")
-        except ValueError:
-            messagebox.showerror("Error", "Please enter a valid amount!")
-    
-    def add_expenditure(self):
-        try:
-            category = self.expense_category_var.get()
-            subcategory = self.expense_subcategory_var.get()
-            subsubcategory = self.expense_subsubcategory_var.get()
-            location = self.expense_location.get()
-            amount = float(self.expense_amount.get())
-            date = self.expense_date.get_date().strftime('%d/%m/%Y')
+        if not inv_df.empty:
+            inv_df["month_dt"] = pd.to_datetime(inv_df["date"])
+            inv_df["month"] = inv_df["month_dt"].dt.to_period("M")
+            inv_df["year"] = inv_df["month_dt"].dt.year
+
+        # 3. Apply Year Filter
+        if year_val != "All":
+            target_year = int(year_val)
+            if not inc_df.empty: inc_df = inc_df[inc_df["year"] == target_year]
+            if not exp_df.empty: exp_df = exp_df[exp_df["year"] == target_year]
+            if not inv_df.empty: inv_df = inv_df[inv_df["year"] == target_year]
+
+        # 4. Group Data
+        inc_grp = inc_df.groupby("month")["amount"].sum().reset_index() if not inc_df.empty else pd.DataFrame(columns=["month", "amount"])
+        
+        exp_grp_eur = exp_df[exp_df["region"] == "GER"].groupby("month")["amount_eur"].sum().reset_index() if not exp_df.empty else pd.DataFrame(columns=["month", "amount_eur"])
+        exp_grp_bd_local = exp_df[exp_df["region"] == "BD"].groupby("month")["amount_local"].sum().reset_index() if not exp_df.empty else pd.DataFrame(columns=["month", "amount_local"])
+        # Note: Recalculate BD EUR using filtered DF
+        if not exp_df.empty:
+            exp_grp_bd_eur = exp_df[exp_df["region"] == "BD"].groupby("month")["amount_local"].sum().reset_index()
+            exp_grp_bd_eur["amount_eur"] = exp_grp_bd_eur["amount_local"] / self.dm.DEFAULT_RATE
+        else:
+            exp_grp_bd_eur = pd.DataFrame(columns=["month", "amount_eur"])
             
-            if not category:
-                messagebox.showwarning("Warning", "Please select a category!")
-                return
+        inv_grp = inv_df[inv_df["type"] == "Investment"].groupby("month")["amount"].sum().reset_index() if not inv_df.empty else pd.DataFrame(columns=["month", "amount"])
+        ret_grp = inv_df[inv_df["type"] == "Return"].groupby("month")["amount"].sum().reset_index() if not inv_df.empty else pd.DataFrame(columns=["month", "amount"])
+
+        # 5. Populate Tree
+        self.summary_tree.delete(*self.summary_tree.get_children())
+        
+        cols = ["Month", "Income", "GER Exp", "BD Exp", "Net Inv", "Balance"]
+        self.summary_tree["columns"] = cols
+        col_widths = [140, 100, 100, 100, 100, 100]
+        for col, width in zip(cols, col_widths):
+            self.summary_tree.heading(col, text=col)
+            self.summary_tree.column(col, width=width, minwidth=width, anchor="center", stretch=False)
+        
+        totals = {k: 0.0 for k in cols[1:]}
+        
+        # Determine months from filtered data
+        months = set()
+        if not inc_grp.empty: months.update(inc_grp["month"].tolist())
+        if not exp_grp_eur.empty: months.update(exp_grp_eur["month"].tolist())
+        if not exp_grp_bd_local.empty: months.update(exp_grp_bd_local["month"].tolist())
+        if not inv_grp.empty: months.update(inv_grp["month"].tolist())
+        if not ret_grp.empty: months.update(ret_grp["month"].tolist())
+        months = sorted(list(months))
+        
+        for m in months:
+            inc = inc_grp[inc_grp["month"] == m]["amount"].sum() if not inc_grp.empty else 0
+            ret = ret_grp[ret_grp["month"] == m]["amount"].sum() if not ret_grp.empty else 0
+            exp_e = exp_grp_eur[exp_grp_eur["month"] == m]["amount_eur"].sum() if not exp_grp_eur.empty else 0
+            exp_b_tk = exp_grp_bd_local[exp_grp_bd_local["month"] == m]["amount_local"].sum() if not exp_grp_bd_local.empty else 0
+            exp_b_eur = exp_grp_bd_eur[exp_grp_bd_eur["month"] == m]["amount_eur"].sum() if not exp_grp_bd_eur.empty else 0
+            inv = inv_grp[inv_grp["month"] == m]["amount"].sum() if not inv_grp.empty else 0
             
-            self.transactions.append({
-                'type': 'expense',
-                'category': category,
-                'subcategory': subcategory,
-                'subsubcategory': subsubcategory, 
-                'location': location,
-                'amount': amount,
-                'date': date
-            })
+            net_inv = ret - inv
+            bal = inc - exp_e - exp_b_eur + net_inv
             
-            self.expense_amount.delete(0, 'end')
-            self.expense_location.delete(0, 'end')
-            self.save_data()
-            messagebox.showinfo("Success", "Expenditure added successfully!")
-        except ValueError:
-            messagebox.showerror("Error", "Please enter a valid amount!")
+            month_str = m.strftime('%B %Y') if hasattr(m, 'strftime') else str(m)
+            self.summary_tree.insert("", "end", values=(month_str, f"{inc:.2f}", f"{exp_e:.2f}", f"{exp_b_tk:.2f}", f"{net_inv:.2f}", f"{bal:.2f}"))
             
-    def update_current_month_income(self):
-        current_month = datetime.now().strftime('%m/%Y')
-        total = sum(income['amount'] for income in self.income_sources 
-                   if income['date'].endswith(current_month))
-        self.current_month_income_label.config(text=f"Current Month Income: €{total:.2f}")
-    
-    def update_clocks(self):
-        now = datetime.now()
-        self.weekday_label.config(text=f"Day: {now.strftime('%A')}")
-        self.date_label.config(text=f"Date: {now.strftime('%d/%m/%Y')}")
-        self.month_label.config(text=f"Month: {now.strftime('%B %Y')}")
-        self.time_label.config(text=f"Time: {now.strftime('%H:%M:%S')}")
-        self.draw_clock(self.header_clock_canvas, 60, 60, 55)
-        self.root.after(1000, self.update_clocks)
-    
-    def draw_clock(self, canvas, cx, cy, radius):
-        canvas.delete("all")
-        canvas.create_oval(cx-radius, cy-radius, cx+radius, cy+radius, 
-                          outline='#1B5E20', width=3, fill='white')
-        for i in range(12):
-            angle = math.radians(90 - i * 30)
-            x1 = cx + (radius - 12) * math.cos(angle)
-            y1 = cy - (radius - 12) * math.sin(angle)
-            x2 = cx + (radius - 6) * math.cos(angle)
-            y2 = cy - (radius - 6) * math.sin(angle)
-            canvas.create_line(x1, y1, x2, y2, width=2, fill='#1B5E20')
-            num_x = cx + (radius - 20) * math.cos(angle)
-            num_y = cy - (radius - 20) * math.sin(angle)
-            hour_num = 12 if i == 0 else i
-            canvas.create_text(num_x, num_y, text=str(hour_num), 
-                             font=('Arial', 11, 'bold'), fill='#1B5E20')
-        now = datetime.now()
-        hour = now.hour % 12
-        minute = now.minute
-        second = now.second
-        second_angle = math.radians(90 - second * 6)
-        minute_angle = math.radians(90 - (minute * 6 + second * 0.1))
-        hour_angle = math.radians(90 - (hour * 30 + minute * 0.5))
-        sec_len = radius - 12
-        sec_x = cx + sec_len * math.cos(second_angle)
-        sec_y = cy - sec_len * math.sin(second_angle)
-        canvas.create_line(cx, cy, sec_x, sec_y, fill='red', width=2)
-        min_len = radius - 18
-        min_x = cx + min_len * math.cos(minute_angle)
-        min_y = cy - min_len * math.sin(minute_angle)
-        canvas.create_line(cx, cy, min_x, min_y, fill='#1976D2', width=4)
-        hour_len = radius - 28
-        hour_x = cx + hour_len * math.cos(hour_angle)
-        hour_y = cy - hour_len * math.sin(hour_angle)
-        canvas.create_line(cx, cy, hour_x, hour_y, fill='#1B5E20', width=5)
-        canvas.create_oval(cx-5, cy-5, cx+5, cy+5, fill='#1B5E20')
-
-    # --- Database Section ---
-    
-        
-    def create_database_tab(self):
-        # --- MAIN SCROLLABLE AREA ---
-        self.db_canvas = tk.Canvas(self.database_tab)
-        v_scroll_main = ttk.Scrollbar(self.database_tab, orient="vertical", command=self.db_canvas.yview)
-        self.db_scroll_frame = ttk.Frame(self.db_canvas)
-
-        self.db_scroll_frame.bind(
-            "<Configure>",
-            lambda e: self.db_canvas.configure(scrollregion=self.db_canvas.bbox("all"))
-        )
-
-        self.db_canvas.create_window((0, 0), window=self.db_scroll_frame, anchor="nw")
-        self.db_canvas.configure(yscrollcommand=v_scroll_main.set)
-
-        v_scroll_main.pack(side="right", fill="y")
-        self.db_canvas.pack(side="left", fill="both", expand=True)
-
-        # ---------------------------------------------------------
-        # TOP SECTION: FILTERS & CSV DATABASE OPERATIONS
-        # ---------------------------------------------------------
-        top_frame = ttk.LabelFrame(self.db_scroll_frame, text="Global Controls & CSV Database", padding=10)
-        top_frame.pack(fill='x', padx=10, pady=5)
-        
-        # Year Filter
-        filter_f = ttk.Frame(top_frame)
-        filter_f.pack(side='left')
-        ttk.Label(filter_f, text="Select Year:").pack(side='left', padx=5)
-        ttk.Combobox(filter_f, textvariable=self.db_year_var, values=[str(y) for y in range(2020, 2031)], width=10).pack(side='left')
-
-        ttk.Separator(top_frame, orient='vertical').pack(side='left', fill='y', padx=20)
-
-        # NEW CSV DATABASE BUTTONS
-        ttk.Button(top_frame, text="Save Database to CSV", 
-                   command=self.export_csv_comprehensive).pack(side='left', padx=5)
-        ttk.Button(top_frame, text="Load Database from CSV", 
-                   command=self.import_csv_comprehensive).pack(side='left', padx=5)
-
-        # ---------------------------------------------------------
-        # SECTION 1: CATEGORY TABLE
-        # ---------------------------------------------------------
-        s1 = ttk.LabelFrame(self.db_scroll_frame, text="1. Category Overview (Year Filter)", padding=10)
-        s1.pack(fill='x', padx=10, pady=10)
-        ttk.Button(s1, text="Refresh Category Table", command=self.update_category_table).pack(anchor='w', pady=5)
-
-        t1_container = ttk.Frame(s1)
-        t1_container.pack(fill='x', expand=True)
-        self.cat_tree = ttk.Treeview(t1_container, show='headings', height=13)
-        h_scroll1 = ttk.Scrollbar(t1_container, orient="horizontal", command=self.cat_tree.xview)
-        self.cat_tree.configure(xscrollcommand=h_scroll1.set)
-        self.cat_tree.grid(row=0, column=0, sticky='nsew')
-        h_scroll1.grid(row=1, column=0, sticky='ew')
-        t1_container.grid_columnconfigure(0, weight=1)
-
-        # ---------------------------------------------------------
-        # SECTION 2: SUBCATEGORY TABLE
-        # ---------------------------------------------------------
-        
-        # SECTION 2: SUBCATEGORY TABLE
-        s2 = ttk.LabelFrame(self.db_scroll_frame, text="2. Subcategory Overview", padding=10)
-        s2.pack(fill='x', padx=10, pady=10)
-        f2 = ttk.Frame(s2)
-        f2.pack(fill='x', pady=5)
-        ttk.Label(f2, text="Select Category:").pack(side='left')
-        
-        # Note: Do NOT define self.subcat_filter_cat_var here anymore!
-        self.subcat_filter_cat_combo = ttk.Combobox(f2, textvariable=self.subcat_filter_cat_var, 
-                                                   values=self.categories, state="readonly")
-        self.subcat_filter_cat_combo.pack(side='left', padx=5)
-        ttk.Button(f2, text="Update Table", command=self.update_subcategory_table).pack(side='left')
-
-        t2_frame = ttk.Frame(s2)
-        t2_frame.pack(fill='x', expand=True)
-        self.subcat_tree = ttk.Treeview(t2_frame, show='headings', height=13)
-        h_scroll2 = ttk.Scrollbar(t2_frame, orient="horizontal", command=self.subcat_tree.xview)
-        self.subcat_tree.configure(xscrollcommand=h_scroll2.set)
-        self.subcat_tree.grid(row=0, column=0, sticky='nsew')
-        h_scroll2.grid(row=1, column=0, sticky='ew')
-        t2_frame.grid_columnconfigure(0, weight=1)
-
-        # ---------------------------------------------------------
-        # SECTION 3: SUB-SUBCATEGORY TABLE
-        # ---------------------------------------------------------
-        s3 = ttk.LabelFrame(self.db_scroll_frame, text="3. Sub-Subcategory Overview (Year + Cat + Sub)", padding=10)
-        s3.pack(fill='x', padx=10, pady=10)
-
-        f3 = ttk.Frame(s3)
-        f3.pack(fill='x', pady=5)
-
-        # 1. Category Filter for Sub-Sub
-        ttk.Label(f3, text="Category:").pack(side='left')
-        self.db_subsub_cat_combo = ttk.Combobox(f3, textvariable=self.subsub_filter_cat_var, 
-                                               values=self.categories, state="readonly", width=20)
-        self.db_subsub_cat_combo.pack(side='left', padx=5)
-        # BINDING: When Category changes, update the Subcategory list
-        self.db_subsub_cat_combo.bind('<<ComboboxSelected>>', self.sync_db_subsub_filters)
-
-        # 2. Subcategory Filter for Sub-Sub
-        ttk.Label(f3, text="Subcategory:").pack(side='left', padx=5)
-        self.db_subsub_sub_combo = ttk.Combobox(f3, textvariable=self.subsub_filter_sub_var, 
-                                               state="readonly", width=20)
-        self.db_subsub_sub_combo.pack(side='left', padx=5)
-
-        # 3. Update Button
-        ttk.Button(f3, text="Update Sub-Sub Table", command=self.update_subsubcategory_table).pack(side='left', padx=10)
-
-        # 4. Table Container
-        t3_frame = ttk.Frame(s3)
-        t3_frame.pack(fill='x', expand=True)
-        self.subsub_tree = ttk.Treeview(t3_frame, show='headings', height=12)
-        h_scroll3 = ttk.Scrollbar(t3_frame, orient="horizontal", command=self.subsub_tree.xview)
-        self.subsub_tree.configure(xscrollcommand=h_scroll3.set)
-        self.subsub_tree.pack(fill='x')
-        h_scroll3.pack(fill='x')
-        
-    
-    def export_csv_comprehensive(self):
-        """Exports all financial records (Euro, BD, Income, Investments) into one CSV file"""
-        filename = filedialog.asksaveasfilename(
-            defaultextension=".csv",
-            filetypes=[("CSV files", "*.csv")],
-            initialfilename=f"finance_db_backup_{datetime.now().strftime('%Y%m%d')}.csv"
-        )
-        if not filename: return
-
-        try:
-            with open(filename, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                # Standardized Header
-                writer.writerow(['Date', 'Type', 'Category', 'Subcategory', 'Sub-Subcategory', 'Amount', 'Currency', 'Details'])
-                
-                # 1. Euro Expenses
-                for t in self.transactions:
-                    writer.writerow([t.get('date'), 'Euro Expense', t.get('category'), t.get('subcategory'), 
-                                     t.get('subsubcategory'), t.get('amount'), 'EUR', t.get('location')])
-                
-                # 2. BD Expenses
-                for t in self.bd_transactions:
-                    writer.writerow([t.get('date'), 'BD Expense', t.get('category'), t.get('subcategory'), 
-                                     t.get('subsubcategory'), t.get('amount'), 'BDT', ''])
-
-                # 3. Income
-                for i in self.income_sources:
-                    writer.writerow([i.get('date'), 'Income', 'Income', i.get('source'), '', i.get('amount'), 'EUR', ''])
-
-                # 4. Investments
-                for inv in self.investments:
-                    writer.writerow([inv.get('date'), 'Investment', inv.get('category'), '', '', 
-                                     inv.get('amount'), 'EUR', inv.get('description')])
-
-                # 5. Returns
-                for ret in self.investment_returns:
-                    writer.writerow([ret.get('date'), 'Return', ret.get('category'), '', '', 
-                                     ret.get('amount'), 'EUR', ret.get('type')])
-
-            messagebox.showinfo("Success", "Full database exported to CSV successfully.")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to export: {e}")
-
-    def import_csv_comprehensive(self):
-        """Imports data from a comprehensive CSV and replaces current memory (Confirmation Required)"""
-        filename = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
-        if not filename: return
-
-        if not messagebox.askyesno("Confirm Load", "This will merge CSV data with current data. Continue?"):
-            return
-
-        try:
-            with open(filename, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    etype = row['Type']
-                    data = {
-                        'date': row['Date'],
-                        'amount': float(row['Amount']),
-                        'category': row['Category'],
-                        'subcategory': row['Subcategory'],
-                        'subsubcategory': row['Sub-Subcategory']
-                    }
-
-                    if etype == 'Euro Expense':
-                        data['location'] = row['Details']
-                        data['type'] = 'expense'
-                        self.transactions.append(data)
-                    elif etype == 'BD Expense':
-                        self.bd_transactions.append(data)
-                    elif etype == 'Income':
-                        self.income_sources.append({'date': data['date'], 'amount': data['amount'], 'source': data['subcategory']})
-                    elif etype == 'Investment':
-                        self.investments.append({'date': data['date'], 'amount': data['amount'], 'category': data['category'], 'description': row['Details']})
-                    elif etype == 'Return':
-                        self.investment_returns.append({'date': data['date'], 'amount': data['amount'], 'category': data['category'], 'type': row['Details']})
-
-            self.save_data() # Persist to JSON
-            messagebox.showinfo("Success", "Database loaded and merged from CSV. All tables updated.")
-            self.update_category_table()
-            self.update_input_summary_table()
-            if hasattr(self, 'update_investment_display'): self.update_investment_display()
-
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to import: {e}. Ensure CSV format is correct.")
-
-    def sync_db_subsub_filters(self, event=None):
-        """Updates the Subcategory dropdown based on Category in Section 3"""
-        cat = self.subsub_filter_cat_var.get()
-        if cat in self.subcategories:
-            # Get the keys (Subcategories) from your nested dictionary
-            subs = list(self.subcategories[cat].keys())
-            self.db_subsub_sub_combo['values'] = subs
-            # Clear the subcategory variable so user has to pick a new one
-            self.subsub_filter_sub_var.set('')
-        
+            totals["Income"] += inc
+            totals["GER Exp"] += exp_e
+            totals["BD Exp"] += exp_b_tk
+            totals["Net Inv"] += net_inv
+            totals["Balance"] += bal
             
-    def db_sync_subsubs(self, event=None):
-        """Updates the Subcategory dropdown in the Database tab specifically"""
-        cat = self.subsub_filter_cat_var.get()
-        if cat in self.subcategories:
-            subs = list(self.subcategories[cat].keys())
-            self.subsub_filter_sub_combo['values'] = subs
-            self.subsub_filter_sub_var.set('')
-            
-    def update_subsub_filter_sub_combo(self, event=None):
-        cat = self.subsub_filter_cat_var.get()
-        if cat in self.subcategories:
-            self.subsub_filter_sub_combo['values'] = list(self.subcategories[cat].keys())
-            if self.subsub_filter_sub_combo['values']:
-                self.subsub_filter_sub_var.current(0)
-        
-    # --- Database Update Functions ---
-   
-    def update_category_table(self):
-        """Rebuilds Category Table: Ensures ALL categories are shown"""
-        year = self.db_year_var.get()
-        # Get all currently active categories
-        cols_to_show = self.categories 
-        
-        matrix = defaultdict(lambda: defaultdict(float))
-        for t in self.transactions:
-            if t.get('date', '').endswith(year):
-                try:
-                    m_idx = int(t['date'].split('/')[1])
-                    cat = t.get('category')
-                    if cat in cols_to_show:
-                        matrix[m_idx][cat] += float(t.get('amount', 0))
-                except: continue
-        
-        self._render_database_rows(self.cat_tree, cols_to_show, matrix)
-    
-    
-
-    def _render_database_rows(self, tree, col_items, matrix):
-        """Universal Rendering: Forces column visibility and prevents Tcl Errors"""
-        month_names = ["January", "February", "March", "April", "May", "June", 
-                       "July", "August", "September", "October", "November", "December"]
-        
-        # 1. THE FIX: Reset columns and displaycolumns simultaneously
-        full_cols = ['Month'] + list(col_items) + ['Total']
-        
-        # We set displaycolumns to an empty tuple first to clear internal Tcl cache
-        tree['displaycolumns'] = () 
-        tree['columns'] = full_cols
-        tree['displaycolumns'] = full_cols # Now set them to the new list
-        
-        for c in full_cols:
-            tree.heading(c, text=str(c)) # Ensure header is a string
-            # stretch=tk.NO is REQUIRED to make the horizontal scrollbar work
-            tree.column(c, width=125, anchor='center', stretch=tk.NO)
-
-        # 2. Clear old items
-        for item in tree.get_children():
-            tree.delete(item)
-
-        # 3. Insert 12 Month Rows
-        grand_total = 0
-        col_sums = defaultdict(float)
-
-        for m_idx in range(1, 13):
-            m_name = month_names[m_idx-1]
-            row = [m_name]
-            row_sum = 0
-            for item in col_items:
-                # Safe nested lookup
-                val = matrix.get(m_idx, {}).get(item, 0.0)
-                row.append(f"{val:.2f}" if val != 0 else "0.00")
-                row_sum += val
-                col_sums[item] += val
-            
-            row.append(f"{row_sum:.2f}")
-            grand_total += row_sum
-            tree.insert('', 'end', values=row)
-
-        # 4. Footer Rows
-        t_row = ["TOTAL"] + [f"{col_sums[i]:.2f}" for i in col_items] + [f"{grand_total:.2f}"]
-        a_row = ["AVERAGE"] + [f"{(col_sums[i]/12):.2f}" for i in col_items] + [f"{(grand_total/12):.2f}"]
-        
-        tree.insert('', 'end', values=t_row, tags=('summary',))
-        tree.insert('', 'end', values=a_row, tags=('summary',))
-        tree.tag_configure('summary', background='#f0f0f0', font=('Arial', 10, 'bold'))
-        
-        # Sync the scrollable canvas
-        if hasattr(self, 'db_canvas'):
-            self.db_scroll_frame.update_idletasks()
-            self.db_canvas.configure(scrollregion=self.db_canvas.bbox("all"))
-        
-    def update_subcategory_table(self):
-        year = self.db_year_var.get()
-        cat = self.subcat_filter_cat_var.get()
-        if not cat: return
-
-        subs = list(self.subcategories.get(cat, {}).keys())
-        matrix = defaultdict(lambda: defaultdict(float))
-        
-
-        
-        for t in self.transactions:
-            if t.get('date', '').endswith(year) and t.get('category') == cat:
-                try:
-                    m_idx = int(t['date'].split('/')[1])
-                    sub = t.get('subcategory')
-                    if sub in subs:
-                        matrix[m_idx][sub] += float(t.get('amount', 0))
-                except: continue
-        
-        # Call the helper to render the table
-        self._render_database_rows(self.subcat_tree, subs, matrix)
-
- 
-        
-    
-    
-    
-        
-    def _fill_table_rows(self, tree, col_items, matrix):
-        """Helper to fill 12 months, Total, and Average for any treeview"""
-        grand_total = 0
-        col_sums = defaultdict(float)
-        month_names = ["January", "February", "March", "April", "May", "June", 
-                       "July", "August", "September", "October", "November", "December"]
-
-        for m_idx in range(1, 13):
-            m_name = month_names[m_idx-1]
-            row = [m_name]
-            row_sum = 0
-            for item in col_items:
-                val = matrix[m_idx][item]
-                row.append(f"{val:.2f}")
-                row_sum += val
-                col_sums[item] += val
-            row.append(f"{row_sum:.2f}")
-            grand_total += row_sum
-            tree.insert('', 'end', values=row)
-
         # Total Row
-        total_row = ["TOTAL"]
-        for item in col_items:
-            total_row.append(f"{col_sums[item]:.2f}")
-        total_row.append(f"{grand_total:.2f}")
-        tree.insert('', 'end', values=total_row, tags=('bold_row',))
-
+        self.summary_tree.insert("", "end", values=("TOTAL", *[f"{v:.2f}" for v in totals.values()]), tags=("total",))
+        
         # Average Row
-        avg_row = ["AVERAGE"]
-        for item in col_items:
-            avg_row.append(f"{(col_sums[item]/12):.2f}")
-        avg_row.append(f"{(grand_total/12):.2f}")
-        tree.insert('', 'end', values=avg_row, tags=('bold_row',))
-
-        tree.tag_configure('bold_row', background='#f0f0f0', font=('Arial', 10, 'bold'))
-
-    def export_csv(self):
-        filename = filedialog.asksaveasfilename(defaultextension=".csv", 
-                                                filetypes=[("CSV files", "*.csv")])
-        if filename:
-            with open(filename, 'w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(['Type', 'Category', 'Subcategory', 'Subsubcategory', 'Location', 'Amount', 'Date', 'Source'])
-                
-                for trans in self.transactions:
-                    writer.writerow([
-                        'Expense',
-                        trans.get('category', ''),
-                        trans.get('subcategory', ''),
-                        trans.get('subsubcategory', ''),
-                        trans.get('location', ''),
-                        trans['amount'],
-                        trans['date'],
-                        ''
-                    ])
-                
-                for income in self.income_sources:
-                    writer.writerow([
-                        'Income',
-                        '',
-                        '',
-                        '',
-                        '',
-                        '',
-                        income['amount'],
-                        income['date'],
-                        income['source']
-                    ])
+        count = len(months)
+        if count > 0:
+            avgs = {k: v/count for k, v in totals.items()}
+            self.summary_tree.insert("", "end", values=("AVERAGE", *[f"{v:.2f}" for v in avgs.values()]), tags=("total",))
             
-            messagebox.showinfo("Success", "Data exported successfully!")
-    
-    def import_csv(self):
-        filename = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
-        if filename:
-            try:
-                with open(filename, 'r') as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        if row['Type'] == 'Expense':
-                            self.transactions.append({
-                                'type': 'expense',
-                                'category': row['Category'],
-                                'subcategory': row['Subcategory'],
-                                'subsubcategory': row.get('Subsubcategory', ''),
-                                'location': row['Location'],
-                                'amount': float(row['Amount']),
-                                'date': row['Date']
-                            })
-                        elif row['Type'] == 'Income':
-                            self.income_sources.append({
-                                'source': row['Source'],
-                                'amount': float(row['Amount']),
-                                'date': row['Date']
-                            })
+        self.summary_tree.tag_configure("total", background="#e0e0e0", font=("Arial", 10, "bold"))
+        
+        # Update Top Labels
+        init_bal = float(self.init_bal_entry.get())
+        net_flow = totals["Balance"]
+        total_disp = init_bal + net_flow
+        
+        self.lbl_total_bal_top.config(text=f"Total Balance: {total_disp:.2f} EUR")
+        
+        bd_tk = self.dm.data["current_balance_bd"]
+        rate = float(self.bd_deposit_rate.get())
+        bd_eur = bd_tk / rate if rate > 0 else 0
+        self.lbl_bd_bal_top.config(text=f"BD Balance: {bd_tk:.2f} Tk ({bd_eur:.2f} EUR)")
+
+    # ==========================================
+    # TAB 2: DATABASE
+    # ==========================================
+    def setup_tab2(self):
+        # Top Control Frame (Year and Region)
+        ctrl_frame = ttk.Frame(self.tab2)
+        ctrl_frame.pack(fill="x", padx=5, pady=5)
+        
+        ttk.Label(ctrl_frame, text="Year:").pack(side="left")
+        self.db_year = ttk.Combobox(ctrl_frame, values=["All"] + list(range(2020, 2030)), width=5, state="readonly")
+        self.db_year.current(0)
+        self.db_year.pack(side="left", padx=5)
+        
+        ttk.Label(ctrl_frame, text="Region:").pack(side="left", padx=10)
+        self.db_filter = ttk.Combobox(ctrl_frame, values=["All", "GER", "BD"], state="readonly")
+        self.db_filter.current(0)
+        self.db_filter.pack(side="left", padx=5)
+        
+        ttk.Button(ctrl_frame, text="Generate Tables", command=self.generate_db_tables).pack(side="left", padx=20)
+        
+        # Middle Frame (Expense Tables)
+        self.db_top_frame = ttk.LabelFrame(self.tab2, text="Expense Database")
+        self.db_top_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        self.db_tabs_exp = ttk.Notebook(self.db_top_frame)
+        self.db_tabs_exp.pack(fill="both", expand=True)
+        
+        self.db_tab1 = ttk.Frame(self.db_tabs_exp) 
+        self.db_tab2 = ttk.Frame(self.db_tabs_exp) 
+        self.db_tab3 = ttk.Frame(self.db_tabs_exp) 
+        
+        self.db_tabs_exp.add(self.db_tab1, text="Table 1")
+        self.db_tabs_exp.add(self.db_tab2, text="Table 2")
+        self.db_tabs_exp.add(self.db_tab3, text="Table 3")
+        
+        self.t1_container = ttk.Frame(self.db_tab1)
+        self.t1_container.pack(fill="both", expand=True)
+        self.t2_container = ttk.Frame(self.db_tab2)
+        self.t2_container.pack(fill="both", expand=True)
+        self.t3_container = ttk.Frame(self.db_tab3)
+        self.t3_container.pack(fill="both", expand=True)
+
+        # Bottom Frame (Investment Section)
+        self.db_bot_frame = ttk.LabelFrame(self.tab2, text="Investment Database")
+        self.db_bot_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        self.db_tabs_inv = ttk.Notebook(self.db_bot_frame)
+        self.db_tabs_inv.pack(fill="both", expand=True)
+        
+        self.inv_tab_list = ttk.Frame(self.db_tabs_inv)
+        self.inv_tab_ret = ttk.Frame(self.db_tabs_inv)
+        self.inv_tab_kh = ttk.Frame(self.db_tabs_inv)
+        self.inv_tab_pivot = ttk.Frame(self.db_tabs_inv)
+        
+        self.db_tabs_inv.add(self.inv_tab_list, text="Investments")
+        self.db_tabs_inv.add(self.inv_tab_ret, text="Return")
+        self.db_tabs_inv.add(self.inv_tab_kh, text="Karje Hasana")
+        self.db_tabs_inv.add(self.inv_tab_pivot, text="Inv/Ret Pivot")
+        
+        self.setup_investment_section()
+
+    def setup_investment_section(self):
+        # Create Investment Trees
+        self.tree_inv = ttk.Treeview(self.inv_tab_list, columns=("Month", "Category", "Amount", "Desc"), show="headings")
+        self.tree_inv.pack(fill="both", expand=True)
+        for c in self.tree_inv["columns"]: self.tree_inv.heading(c, text=c)
+        
+        self.tree_ret = ttk.Treeview(self.inv_tab_ret, columns=("Month", "Category", "Amount", "Desc"), show="headings")
+        self.tree_ret.pack(fill="both", expand=True)
+        for c in self.tree_ret["columns"]: self.tree_ret.heading(c, text=c)
+        
+        self.tree_kh = ttk.Treeview(self.inv_tab_kh, columns=("Date", "Name/Org", "Address", "Amount", "Return", "To Be Return"), show="headings")
+        self.tree_kh.pack(fill="both", expand=True)
+        for c in self.tree_kh["columns"]: self.tree_kh.heading(c, text=c)
+        
+        # --- Inv/Ret Pivot Controls and Table ---
+        self.pivot_ctrl_frame = ttk.Frame(self.inv_tab_pivot)
+        self.pivot_ctrl_frame.pack(fill="x", padx=5, pady=5)
+        
+        ttk.Label(self.pivot_ctrl_frame, text="Year:").pack(side="left")
+        self.pivot_year = ttk.Combobox(self.pivot_ctrl_frame, values=["All"] + list(range(2020, 2030)), width=5, state="readonly")
+        self.pivot_year.current(0)
+        self.pivot_year.pack(side="left", padx=5)
+        self.pivot_year.bind("<<ComboboxSelected>>", self.generate_db_tables)
+        
+        ttk.Label(self.pivot_ctrl_frame, text="Type:").pack(side="left", padx=10)
+        self.pivot_filter = ttk.Combobox(self.pivot_ctrl_frame, values=["All", "Investment", "Return"], state="readonly")
+        self.pivot_filter.current(0)
+        self.pivot_filter.pack(side="left", padx=5)
+        self.pivot_filter.bind("<<ComboboxSelected>>", self.generate_db_tables)
+        
+        self.tree_inv_pivot = ttk.Treeview(self.inv_tab_pivot, show="headings")
+        self.tree_inv_pivot.pack(fill="both", expand=True)
+
+    def generate_db_tables(self, event=None):
+        # Clear Expense Tables
+        for t in [self.t1_container, self.t2_container, self.t3_container]:
+            for widget in t.winfo_children(): widget.destroy()
+            
+        # Clear Investment Lists
+        if hasattr(self, 'tree_inv') and hasattr(self.tree_inv, 'delete'):
+            self.tree_inv.delete(*self.tree_inv.get_children())
+        if hasattr(self, 'tree_ret') and hasattr(self.tree_ret, 'delete'):
+            self.tree_ret.delete(*self.tree_ret.get_children())
+        if hasattr(self, 'tree_kh') and hasattr(self.tree_kh, 'delete'):
+            self.tree_kh.delete(*self.tree_kh.get_children())
+            
+        # Clear Pivot Table
+        if hasattr(self.tree_inv_pivot, 'delete'):
+            self.tree_inv_pivot.delete(*self.tree_inv_pivot.get_children())
+            
+        # --- Generate Expense Tables ---
+        year = self.db_year.get()
+        filter_type = self.db_filter.get()
+        
+        df = pd.DataFrame(self.dm.data["expenses"])
+        if df.empty: 
+            ttk.Label(self.t1_container, text="No Data").pack()
+            return
+        
+        df["month"] = pd.to_datetime(df["date"]).dt.to_period("M")
+        df["year"] = pd.to_datetime(df["date"]).dt.year
+        df = df.sort_values("month")
+        
+        if year != "All":
+            df = df[df["year"] == int(year)]
+            
+        if filter_type in ["GER", "BD"]:
+            df = df[df["region"] == filter_type]
+        
+        if df.empty:
+            ttk.Label(self.t1_container, text="No Data for Filter").pack()
+            return
+
+        def make_table(parent, df_pivot):
+            frame = ttk.Frame(parent)
+            frame.pack(fill="both", expand=True)
+            
+            canvas = tk.Canvas(frame)
+            scrollbar_v = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+            scrollbar_h = ttk.Scrollbar(frame, orient="horizontal", command=canvas.xview)
+            scrollable_frame = ttk.Frame(canvas)
+
+            scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar_v.set, xscrollcommand=scrollbar_h.set)
+
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar_v.pack(side="right", fill="y")
+            scrollbar_h.pack(side="bottom", fill="x")
+
+            tree = ttk.Treeview(scrollable_frame, show="headings")
+            tree.pack(fill="both", expand=True)
+            
+            cols = list(df_pivot.columns)
+            cols = sorted(cols)
+            final_cols = ["Month"] + cols + ["Total"]
+            
+            tree["columns"] = final_cols
+            tree.column("#0", width=0, stretch=0)
+            for col in final_cols:
+                tree.heading(col, text=col)
+                tree.column(col, width=120, minwidth=120, anchor="e", stretch=False)
                 
-                self.save_data()
-                messagebox.showinfo("Success", "Data imported successfully!")
-                self.update_category_table() 
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to import: {str(e)}")
-    
-    # --- BD Section ---
-    def create_bd_tab(self):
-        # Top: Settings & Live Balance
-        settings_frame = ttk.LabelFrame(self.bd_tab, text="Conversion Settings & Balance", padding=10)
-        settings_frame.pack(fill='x', padx=10, pady=5)
-        
-        ttk.Label(settings_frame, text="Conversion Rate (1 Euro to BD Taka):").pack(side='left', padx=5)
-        self.bd_rate_var = tk.DoubleVar(value=self.bd_conversion_rate)
-        rate_entry = ttk.Entry(settings_frame, textvariable=self.bd_rate_var, width=10)
-        rate_entry.pack(side='left', padx=5)
-        
-        ttk.Button(settings_frame, text="Update Rate", command=self.update_bd_rate).pack(side='left', padx=5)
-        
-        self.bd_taka_label = ttk.Label(settings_frame, text="Balance: 0.00 Taka", font=('Arial', 18, 'bold'), foreground='green')
-        self.bd_taka_label.pack(side='right', padx=20)
-        
-        self.bd_euro_label = ttk.Label(settings_frame, text="(0.00 Euro)", font=('Arial', 14))
-        self.bd_euro_label.pack(side='right', padx=5)
-        
-        self.update_bd_display()
+            for idx, row in df_pivot.iterrows():
+                month_name = idx.strftime('%B %Y') if hasattr(idx, 'strftime') else str(idx)
+                vals = [month_name] + [f"{row[c]:.2f}" if pd.notnull(row[c]) else "0.00" for c in cols] + [f"{row.sum():.2f}"]
+                tree.insert("", "end", values=vals)
+            
+            totals = [f"{df_pivot[c].sum():.2f}" for c in cols]
+            tree.insert("", "end", values=("Total",) + tuple(totals) + (f"{df_pivot.sum().sum():.2f}",), tags=("total",))
+            tree.tag_configure("total", background="#ccc")
 
-        # Middle: Inputs
-        input_split_frame = ttk.Frame(self.bd_tab)
-        input_split_frame.pack(fill='x', padx=10, pady=5)
-        
-        # Left: Add Money
-        left_form = ttk.LabelFrame(input_split_frame, text="Add Money to BD Balance", padding=10)
-        left_form.pack(side='left', fill='both', expand=True, padx=5)
-        
-        ttk.Label(left_form, text="Convert Euro to Taka").pack(pady=5)
-        ttk.Label(left_form, text="Euro Amount:").pack(anchor='w')
-        self.bd_euro_amount = ttk.Entry(left_form)
-        self.bd_euro_amount.pack(fill='x', pady=2)
-        
-        ttk.Label(left_form, text="Rate:").pack(anchor='w')
-        self.bd_calc_rate = ttk.Entry(left_form)
-        self.bd_calc_rate.insert(0, str(self.bd_conversion_rate))
-        self.bd_calc_rate.pack(fill='x', pady=2)
-        
-        ttk.Button(left_form, text="Convert & Add to Balance", command=self.add_bd_from_euro).pack(pady=10)
-        
-        ttk.Label(left_form, text="Add Taka Directly").pack(pady=5)
-        ttk.Label(left_form, text="Taka Amount:").pack(anchor='w')
-        self.bd_taka_amount = ttk.Entry(left_form)
-        self.bd_taka_amount.pack(fill='x', pady=2)
-        ttk.Button(left_form, text="Add to Balance", command=self.add_bd_taka).pack(pady=10)
+        val_col = "amount_local" if filter_type == "BD" else "amount_eur"
+        unit = " (Tk)" if filter_type == "BD" else " (Eur)"
 
-        # Right: Add Expenditure
-        right_form = ttk.LabelFrame(input_split_frame, text="Add Expenditure (BD)", padding=10)
-        right_form.pack(side='left', fill='both', expand=True, padx=5)
+        t1 = df.pivot_table(index="month", columns="category", values=val_col, aggfunc="sum", fill_value=0)
+        make_table(self.t1_container, t1)
         
-        ttk.Label(right_form, text="Category:").grid(row=0, column=0, sticky='w', pady=2)
-        self.bd_exp_cat_var = tk.StringVar()
-        self.bd_exp_cat_combo = ttk.Combobox(right_form, textvariable=self.bd_exp_cat_var)
-        self.bd_exp_cat_combo.grid(row=0, column=1, sticky='ew', pady=2, padx=5)
-        self.bd_exp_cat_combo.bind('<<ComboboxSelected>>', self.bd_update_subcategory_combo)
+        t2_ctrl = ttk.Frame(self.t2_container)
+        t2_ctrl.pack(fill="x")
+        sel_cat = ttk.Combobox(t2_ctrl, values=list(df["category"].unique()), state="readonly")
+        sel_cat.pack(side="left", padx=5)
+        if not df.empty: sel_cat.current(0)
         
-        ttk.Label(right_form, text="Subcategory:").grid(row=1, column=0, sticky='w', pady=2)
-        self.bd_exp_subcat_var = tk.StringVar()
-        self.bd_exp_subcat_combo = ttk.Combobox(right_form, textvariable=self.bd_exp_subcat_var)
-        self.bd_exp_subcat_combo.grid(row=1, column=1, sticky='ew', pady=2, padx=5)
-        self.bd_exp_subcat_combo.bind('<<ComboboxSelected>>', self.bd_update_subsubcategory_combo)
+        t2_tree_area = ttk.Frame(self.t2_container)
+        t2_tree_area.pack(fill="both", expand=True)
         
-        ttk.Label(right_form, text="Sub-subcategory:").grid(row=2, column=0, sticky='w', pady=2)
-        self.bd_exp_subsubcat_var = tk.StringVar()
-        self.bd_exp_subsubcat_combo = ttk.Combobox(right_form, textvariable=self.bd_exp_subsubcat_var)
-        self.bd_exp_subsubcat_combo.grid(row=2, column=1, sticky='ew', pady=2, padx=5)
+        def update_t2(event):
+            c = sel_cat.get()
+            sub_df = df[df["category"] == c]
+            if not sub_df.empty:
+                t2 = sub_df.pivot_table(index="month", columns="subcategory", values=val_col, aggfunc="sum", fill_value=0)
+                for w in t2_tree_area.winfo_children(): w.destroy()
+                make_table(t2_tree_area, t2)
         
-        ttk.Label(right_form, text="Amount (Taka):").grid(row=3, column=0, sticky='w', pady=2)
-        self.bd_exp_amount = ttk.Entry(right_form)
-        self.bd_exp_amount.grid(row=3, column=1, sticky='ew', pady=2, padx=5)
+        sel_cat.bind("<<ComboboxSelected>>", update_t2)
+        update_t2(None) 
         
-        ttk.Label(right_form, text="Date:").grid(row=4, column=0, sticky='w', pady=2)
-        self.bd_exp_date = DateEntry(right_form, date_pattern='dd/mm/yyyy')
-        self.bd_exp_date.grid(row=4, column=1, sticky='ew', pady=2, padx=5)
+        t3_ctrl = ttk.Frame(self.t3_container)
+        t3_ctrl.pack(fill="x")
+        sel_cat3 = ttk.Combobox(t3_ctrl, values=list(df["category"].unique()), state="readonly")
+        sel_cat3.pack(side="left", padx=5)
+        sel_sub3 = ttk.Combobox(t3_ctrl, state="readonly")
+        sel_sub3.pack(side="left", padx=5)
         
-        ttk.Button(right_form, text="Add Expenditure", command=self.add_bd_expenditure).grid(row=5, column=0, columnspan=2, pady=10)
+        t3_tree_area = ttk.Frame(self.t3_container)
+        t3_tree_area.pack(fill="both", expand=True)
+        
+        def update_cat3(event):
+            c = sel_cat3.get()
+            subs = df[df["category"] == c]["subcategory"].unique().tolist()
+            sel_sub3['values'] = subs
+            if subs: sel_sub3.current(0)
+            update_t3(None)
+                
+        def update_t3(event):
+            c = sel_cat3.get()
+            s = sel_sub3.get()
+            sub_df = df[(df["category"] == c) & (df["subcategory"] == s)]
+            if not sub_df.empty:
+                t3 = sub_df.pivot_table(index="month", columns="subsubcategory", values=val_col, aggfunc="sum", fill_value=0)
+                for w in t3_tree_area.winfo_children(): w.destroy()
+                make_table(t3_tree_area, t3)
+        
+        sel_cat3.bind("<<ComboboxSelected>>", update_cat3)
+        sel_sub3.bind("<<ComboboxSelected>>", update_t3)
+        if not df.empty:
+            sel_cat3.current(0)
+            update_cat3(None)
 
-        # Bottom: BD Analysis Notebook (Categories, Subcategories, Sub-subcategories ONLY)
-        bd_notebook = ttk.Notebook(self.bd_tab)
-        bd_notebook.pack(fill='both', expand=True, padx=10, pady=5)
-        
-        # Tab 1: Categories View
-        bd_cat_tab = ttk.Frame(bd_notebook)
-        bd_notebook.add(bd_cat_tab, text="Categories View")
-        self.create_bd_categories_view(bd_cat_tab)
-        
-        # Tab 2: Subcategories View
-        bd_subcat_tab = ttk.Frame(bd_notebook)
-        bd_notebook.add(bd_subcat_tab, text="Subcategories View")
-        self.create_bd_subcategories_view(bd_subcat_tab)
-        
-        # Tab 3: Sub-subcategories View
-        bd_subsubcat_tab = ttk.Frame(bd_notebook)
-        bd_notebook.add(bd_subsubcat_tab, text="Sub-subcategories View")
-        self.create_bd_subsubcategories_view(bd_subsubcat_tab)
-        
-        # Tab 4: BD Analysis (NEW)
-        bd_ana_tab = ttk.Frame(bd_notebook)
-        bd_notebook.add(bd_ana_tab, text="BD Analysis")
-        self.create_bd_analysis_tab(bd_ana_tab)
+        # --- Generate Investment Lists ---
+        inv_df = pd.DataFrame(self.dm.data["investments"])
+        if not inv_df.empty:
+            inv_df["month"] = pd.to_datetime(inv_df["date"]).dt.to_period("M")
+            
+            df_inv = inv_df[inv_df["type"] == "Investment"]
+            self.tree_inv.delete(*self.tree_inv.get_children())
+            for _, row in df_inv.iterrows():
+                self.tree_inv.insert("", "end", values=(row["month"], row["category"], row["amount"], row["description"]))
+                
+            df_ret = inv_df[inv_df["type"] == "Return"]
+            self.tree_ret.delete(*self.tree_ret.get_children())
+            for _, row in df_ret.iterrows():
+                self.tree_ret.insert("", "end", values=(row["month"], row["category"], row["amount"], row["description"]))
+                
+            kh_data = self.dm.get_kh_details()
+            self.tree_kh.delete(*self.tree_kh.get_children())
+            for item in kh_data:
+                self.tree_kh.insert("", "end", values=(item["Date"], item["Name/Org"], item["Address"], item["Amount (Given)"], item["Return"], item["To Be Return"]))
+            
+            # --- Generate Pivot Table ---
+            self.generate_pivot_table()
 
-        # --- NEW TAB: MANAGE HIERARCHY ---
-        bd_mgr_tab = ttk.Frame(bd_notebook)
-        bd_notebook.add(bd_mgr_tab, text="Manage Hierarchy")
-        self.create_bd_management_tab(bd_mgr_tab)
+    def generate_pivot_table(self, event=None):
+        year = self.pivot_year.get()
+        filter_piv = self.pivot_filter.get()
         
-        # REMOVED: Matrix Summary Tab
-        # REMOVED: Transaction Log
-
-        self.update_bd_category_combos()
-    
-    # --- UPDATED BD HIERARCHY MANAGER (Independent) ---
-
-    def create_bd_management_tab(self, parent):
-        """UI specifically for managing BD Hierarchy independently from Input Section."""
+        inv_df = pd.DataFrame(self.dm.data["investments"])
         
-        # --- 1. CATEGORY MANAGEMENT ---
-        cat_frame = ttk.LabelFrame(parent, text="1. BD Category Management", padding=10)
-        cat_frame.pack(fill='x', padx=10, pady=5)
+        # Clear Pivot Tree Safely
+        if hasattr(self.tree_inv_pivot, 'delete'):
+            self.tree_inv_pivot.delete(*self.tree_inv_pivot.get_children())
         
-        row1 = ttk.Frame(cat_frame)
-        row1.pack(fill='x', pady=2)
-        ttk.Label(row1, text="Select Category:").pack(side='left')
-        self.bd_mgr_cat_combo = ttk.Combobox(row1, textvariable=self.bd_mgr_cat_var, 
-                                             values=self.bd_categories, state="readonly", width=25) # FIXED: values=self.bd_categories
-        self.bd_mgr_cat_combo.pack(side='left', padx=5)
-        self.bd_mgr_cat_combo.bind("<<ComboboxSelected>>", self.bd_mgr_update_sub_list)
-        
-        ttk.Button(row1, text="Rename", command=self.bd_mgr_rename_cat).pack(side='left', padx=2)
-        ttk.Button(row1, text="Delete", command=self.bd_mgr_delete_cat).pack(side='left', padx=2)
-        
-        row2 = ttk.Frame(cat_frame)
-        row2.pack(fill='x', pady=2)
-        ttk.Label(row2, text="Add New Category:").pack(side='left')
-        self.bd_mgr_new_cat_entry = ttk.Entry(row2, width=20)
-        self.bd_mgr_new_cat_entry.pack(side='left', padx=5)
-        ttk.Button(row2, text="Add Category", command=self.bd_mgr_add_cat).pack(side='left')
-    
-        ttk.Separator(parent, orient='horizontal').pack(fill='x', pady=10)
-    
-        # --- 2. SUBCATEGORY MANAGEMENT ---
-        sub_frame = ttk.LabelFrame(parent, text="2. BD Subcategory Management", padding=10)
-        sub_frame.pack(fill='x', padx=10, pady=5)
-        
-        row1 = ttk.Frame(sub_frame)
-        row1.pack(fill='x', pady=2)
-        ttk.Label(row1, text="Select Subcategory:").pack(side='left')
-        self.bd_mgr_sub_combo = ttk.Combobox(row1, textvariable=self.bd_mgr_sub_var, 
-                                             state="readonly", width=25)
-        self.bd_mgr_sub_combo.pack(side='left', padx=5)
-        self.bd_mgr_sub_combo.bind("<<ComboboxSelected>>", self.bd_mgr_update_subsub_list)
-        
-        ttk.Button(row1, text="Rename", command=self.bd_mgr_rename_sub).pack(side='left', padx=2)
-        ttk.Button(row1, text="Delete", command=self.bd_mgr_delete_sub).pack(side='left', padx=2)
-        
-        row2 = ttk.Frame(sub_frame)
-        row2.pack(fill='x', pady=2)
-        ttk.Label(row2, text="Add New Subcategory:").pack(side='left')
-        self.bd_mgr_new_sub_entry = ttk.Entry(row2, width=20)
-        self.bd_mgr_new_sub_entry.pack(side='left', padx=5)
-        ttk.Button(row2, text="Add Subcategory", command=self.bd_mgr_add_sub).pack(side='left')
-    
-        ttk.Separator(parent, orient='horizontal').pack(fill='x', pady=10)
-    
-        # --- 3. SUB-SUBCATEGORY MANAGEMENT ---
-        ss_frame = ttk.LabelFrame(parent, text="3. BD Item Management", padding=10)
-        ss_frame.pack(fill='x', padx=10, pady=5)
-        
-        row1 = ttk.Frame(ss_frame)
-        row1.pack(fill='x', pady=2)
-        ttk.Label(row1, text="Select Item:").pack(side='left')
-        self.bd_mgr_subsub_combo = ttk.Combobox(row1, textvariable=self.bd_mgr_subsub_var, 
-                                                state="readonly", width=25)
-        self.bd_mgr_subsub_combo.pack(side='left', padx=5)
-        
-        ttk.Button(row1, text="Rename", command=self.bd_mgr_rename_subsub).pack(side='left', padx=2)
-        ttk.Button(row1, text="Delete", command=self.bd_mgr_delete_subsub).pack(side='left', padx=2)
-        
-        row2 = ttk.Frame(ss_frame)
-        row2.pack(fill='x', pady=2)
-        ttk.Label(row2, text="Add New Item:").pack(side='left')
-        self.bd_mgr_new_subsub_entry = ttk.Entry(row2, width=20)
-        self.bd_mgr_new_subsub_entry.pack(side='left', padx=5)
-        ttk.Button(row2, text="Add Item", command=self.bd_mgr_add_subsub).pack(side='left')
-    
-        self.update_bd_mgr_lists()
-    
-    # --- HELPER: LIST UPDATERS (Fixed) ---
-    
-    def update_bd_mgr_lists(self):
-        """Refreshes all manager dropdowns using BD lists."""
-        self.bd_mgr_cat_combo['values'] = self.bd_categories
-        
-        if self.bd_categories:
-            current = self.bd_mgr_cat_var.get()
-            if not current or current not in self.bd_categories:
-                self.bd_mgr_cat_combo.current(0)
-            self.bd_mgr_update_sub_list()
-        else:
-            self.bd_mgr_cat_var.set('')
-            self.bd_mgr_sub_combo['values'] = []
-            self.bd_mgr_sub_var.set('')
-            self.bd_mgr_subsub_combo['values'] = []
-            self.bd_mgr_subsub_var.set('')
-    
-    def bd_mgr_update_sub_list(self, event=None):
-        """Updates subcategory dropdown using BD lists."""
-        cat = self.bd_mgr_cat_var.get()
-        if cat and cat in self.bd_subcategories:
-            subs = list(self.bd_subcategories[cat].keys())
-            self.bd_mgr_sub_combo['values'] = subs
-            if subs:
-                current = self.bd_mgr_sub_var.get()
-                if not current or current not in subs:
-                    self.bd_mgr_sub_combo.current(0)
+        if not inv_df.empty:
+            inv_df["month"] = pd.to_datetime(inv_df["date"]).dt.to_period("M")
+            inv_df["year"] = pd.to_datetime(inv_df["date"]).dt.year
+            
+            # Apply Year Filter
+            if year != "All":
+                inv_df = inv_df[inv_df["year"] == int(year)]
+                
+            # Apply Type Filter (Investment/Return/All)
+            if filter_piv != "All":
+                inv_df = inv_df[inv_df["type"] == filter_piv]
+            
+            if not inv_df.empty:
+                pivot = inv_df.pivot_table(index="month", columns="category", values="amount", aggfunc="sum", fill_value=0)
+                
+                cols_p = list(pivot.columns)
+                cols_p = sorted(cols_p)
+                cols_final = ["Month"] + cols_p + ["Total"]
+                
+                self.tree_inv_pivot["columns"] = cols_final
+                self.tree_inv_pivot.column("#0", width=0)
+                for c in cols_final:
+                    self.tree_inv_pivot.heading(c, text=c)
+                    self.tree_inv_pivot.column(c, width=120, minwidth=120, anchor="e", stretch=False)
+                
+                for idx, row in pivot.iterrows():
+                    month_p = idx.strftime('%B %Y') if hasattr(idx, 'strftime') else str(idx)
+                    # Calculate row total for display
+                    row_sum = row.sum()
+                    vals = [month_p] + [f"{v:.2f}" for v in row.values] + [f"{row_sum:.2f}"]
+                    self.tree_inv_pivot.insert("", "end", values=vals)
             else:
-                self.bd_mgr_sub_var.set('')
-            self.bd_mgr_update_subsub_list()
+                # Insert placeholder if no data
+                self.tree_inv_pivot.insert("", "end", values=("No Data for Filter", ""))
+
+    # ==========================================
+    # TAB 3: ANALYSIS
+    # ==========================================
+    def setup_tab3(self):
+        top_frame = ttk.LabelFrame(self.tab3, text="Income vs Expense Analysis")
+        top_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        ctrl_top = ttk.Frame(top_frame)
+        ctrl_top.pack(fill="x")
+        ttk.Label(ctrl_top, text="Select Year:").pack(side="left", padx=5)
+        self.ana_year = ttk.Combobox(ctrl_top, values=["All"] + list(range(2020, 2030)), state="readonly")
+        self.ana_year.current(0)
+        self.ana_year.pack(side="left", padx=5)
+        ttk.Button(ctrl_top, text="Plot Trend", command=self.plot_trend).pack(side="left", padx=10)
+        
+        self.fig_top = plt.Figure(figsize=(5, 3), dpi=100)
+        self.ax_top = self.fig_top.add_subplot(111)
+        self.canvas_top = FigureCanvasTkAgg(self.fig_top, top_frame)
+        self.canvas_top.get_tk_widget().pack(fill="both", expand=True)
+        
+        bot_frame = ttk.LabelFrame(self.tab3, text="Detailed Pie Chart Analysis")
+        bot_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        ctrl_bot = ttk.Frame(bot_frame)
+        ctrl_bot.pack(fill="x")
+        
+        ttk.Label(ctrl_bot, text="Year:").pack(side="left", padx=5)
+        self.pie_year = ttk.Combobox(ctrl_bot, values=["All"] + list(range(2020, 2030)), state="readonly")
+        self.pie_year.current(0)
+        self.pie_year.pack(side="left", padx=5)
+        
+        ttk.Label(ctrl_bot, text="Type:").pack(side="left", padx=5)
+        self.pie_type = ttk.Combobox(ctrl_bot, values=["GER", "BD", "All", "Investment"], state="readonly")
+        self.pie_type.current(0)
+        self.pie_type.pack(side="left", padx=5)
+        self.pie_type.bind("<<ComboboxSelected>>", self.toggle_pie_level)
+        
+        self.pie_level_frame = ttk.Frame(ctrl_bot)
+        self.pie_level_frame.pack(side="left", padx=5)
+        ttk.Label(self.pie_level_frame, text="Level:").pack(side="left")
+        self.pie_level = ttk.Combobox(self.pie_level_frame, values=["Category", "Subcategory", "SubSubcategory"], state="readonly")
+        self.pie_level.current(0)
+        self.pie_level.pack(side="left", padx=5)
+        
+        ttk.Button(ctrl_bot, text="Plot Pie", command=self.plot_pie).pack(side="left", padx=10)
+        
+        self.fig_bot = plt.Figure(figsize=(5, 4), dpi=100)
+        self.ax_bot = self.fig_bot.add_subplot(111)
+        self.canvas_bot = FigureCanvasTkAgg(self.fig_bot, bot_frame)
+        self.canvas_bot.get_tk_widget().pack(fill="both", expand=True)
+
+    def toggle_pie_level(self, event=None):
+        if self.pie_type.get() == "Investment":
+            self.pie_level_frame.pack_forget()
         else:
-            self.bd_mgr_sub_combo['values'] = []
-            self.bd_mgr_sub_var.set('')
-            self.bd_mgr_subsub_combo['values'] = []
-            self.bd_mgr_subsub_var.set('')
-    
-    def bd_mgr_update_subsub_list(self, event=None):
-        """Updates item dropdown using BD lists."""
-        cat = self.bd_mgr_cat_var.get()
-        sub = self.bd_mgr_sub_var.get()
-        if cat and sub and cat in self.bd_subcategories and sub in self.bd_subcategories[cat]:
-            ss_list = self.bd_subcategories[cat][sub]
-            if not isinstance(ss_list, list): ss_list = []
-            self.bd_mgr_subsub_combo['values'] = ss_list
-            if ss_list:
-                current = self.bd_mgr_subsub_var.get()
-                if not current or current not in ss_list:
-                    self.bd_mgr_subsub_combo.current(0)
-            else:
-                self.bd_mgr_subsub_var.set('')
+            self.pie_level_frame.pack(side="left", padx=5)
+
+    def plot_trend(self):
+        year = self.ana_year.get()
+        # Use the helper function in DataManager (Note: this returns DataFrames, not aggregated)
+        inc_df, exp_eur, _, exp_bd_eur, inv_df, ret_df = self.dm.get_summary_df()
+        
+        df = pd.DataFrame({"Income": inc_df.set_index("month")["amount"]})
+        df = df.join(exp_eur.set_index("month")["amount_eur"].rename("GER_Exp"))
+        df = df.join(exp_bd_eur.set_index("month")["amount_eur"].rename("BD_Exp"))
+        df = df.join(inv_df.set_index("month")["amount"].rename("Investment"))
+        df = df.join(ret_df.set_index("month")["amount"].rename("Return"))
+        
+        if year != "All":
+            # Note: We filter the index because the helper returns DataFrames that might not be filtered yet.
+            # But actually, the helper returns DataFrames based on the internal data.
+            # So we filter here to respect the UI Year.
+            df = df[df.index.year == int(year)]
+            
+        self.ax_top.clear()
+        if not df.empty:
+            df.plot(kind="bar", ax=self.ax_top)
+            self.ax_top.set_title(f"Income vs Expense ({year})")
+            self.ax_top.set_ylabel("Amount (EUR)")
+            self.ax_top.legend()
         else:
-            self.bd_mgr_subsub_combo['values'] = []
-            self.bd_mgr_subsub_var.set('')
-    
-    # --- CATEGORY ACTIONS (BD SPECIFIC) ---
-    
-    def bd_mgr_add_cat(self):
-        name = self.bd_mgr_new_cat_entry.get().strip()
-        if name and name not in self.bd_categories:
-            self.bd_categories.append(name)
-            self.bd_subcategories[name] = {} # FIXED: Add to BD dict
-            self.save_data()
-            self.bd_mgr_new_cat_entry.delete(0, 'end')
-            self.refresh_all_bd_views()
-            messagebox.showinfo("Success", f"BD Category '{name}' added.")
-        else:
-            messagebox.showwarning("Warning", "Invalid or duplicate category.")
-    
-    def bd_mgr_rename_cat(self):
-        old = self.bd_mgr_cat_var.get()
-        if not old:
-            messagebox.showwarning("Warning", "Please select a category to rename.")
-            return
+            self.ax_top.text(0.5, 0.5, "No Data", ha="center")
+        
+        self.canvas_top.draw()
+
+    def plot_pie(self):
+        year = self.pie_year.get()
+        ptype = self.pie_type.get()
+        level = self.pie_level.get().lower()
+        
+        self.ax_bot.clear()
+        
+        if ptype == "Investment":
+            df = pd.DataFrame(self.dm.data["investments"])
+            if df.empty: return
+            df["year"] = pd.to_datetime(df["date"]).dt.year
+            if year != "All": df = df[df["year"] == int(year)]
             
-        new = simpledialog.askstring("Rename Category", f"Rename '{old}' to:", initialvalue=old)
-        if new and new != old:
-            idx = self.bd_categories.index(old)
-            self.bd_categories[idx] = new
-            self.bd_subcategories[new] = self.bd_subcategories.pop(old) # FIXED: Modify BD dict
-            
-            # Propagate ONLY to BD Transactions
-            for t in self.bd_transactions:
-                if t.get('category') == old:
-                    t['category'] = new
-            
-            self.save_data()
-            self.refresh_all_bd_views()
-            messagebox.showinfo("Success", "Category renamed.")
-    
-    def bd_mgr_delete_cat(self):
-        cat = self.bd_mgr_cat_var.get()
-        if not cat:
-            messagebox.showwarning("Warning", "Please select a category to delete.")
-            return
-            
-        if messagebox.askyesno("Confirm Delete", f"Delete category '{cat}' and ALL its BD data?"):
-            if cat in self.bd_categories: self.bd_categories.remove(cat)
-            if cat in self.bd_subcategories: self.bd_subcategories.pop(cat, None)
-            
-            self.bd_transactions = [t for t in self.bd_transactions if t.get('category') != cat]
-            
-            self.save_data()
-            self.refresh_all_bd_views()
-            messagebox.showinfo("Success", "Category deleted.")
-    
-    # --- SUBCATEGORY ACTIONS (BD SPECIFIC) ---
-    
-    def bd_mgr_add_sub(self):
-        cat = self.bd_mgr_cat_var.get()
-        name = self.bd_mgr_new_sub_entry.get().strip()
-        if not cat: return messagebox.showwarning("Warning", "Please select a Category first.")
-        if name and name not in self.bd_subcategories[cat]:
-            self.bd_subcategories[cat][name] = [] # FIXED: Modify BD dict
-            self.save_data()
-            self.bd_mgr_new_sub_entry.delete(0, 'end')
-            self.refresh_all_bd_views()
-            self.bd_mgr_sub_combo.set(name)
-            self.bd_mgr_update_subsub_list()
-        else:
-            messagebox.showwarning("Warning", "Invalid or duplicate subcategory.")
-    
-    def bd_mgr_rename_sub(self):
-        cat = self.bd_mgr_cat_var.get()
-        old = self.bd_mgr_sub_var.get()
-        if not cat or not old:
-            messagebox.showwarning("Warning", "Please select a subcategory to rename.")
-            return
-            
-        new = simpledialog.askstring("Rename Subcategory", f"Rename '{old}' to:", initialvalue=old)
-        if new and new != old:
-            self.bd_subcategories[cat][new] = self.bd_subcategories[cat].pop(old) # FIXED: Modify BD dict
-            for t in self.bd_transactions:
-                if t.get('category') == cat and t.get('subcategory') == old:
-                    t['subcategory'] = new
-            self.save_data()
-            self.refresh_all_bd_views()
-    
-    def bd_mgr_delete_sub(self):
-        cat = self.bd_mgr_cat_var.get()
-        sub = self.bd_mgr_sub_var.get()
-        if not cat or not sub:
-            messagebox.showwarning("Warning", "Please select a subcategory to delete.")
-            return
-            
-        if messagebox.askyesno("Confirm Delete", f"Delete subcategory '{sub}'?"):
-            if cat in self.bd_subcategories: self.bd_subcategories[cat].pop(sub, None) # FIXED: Modify BD dict
-            self.bd_transactions = [t for t in self.bd_transactions if not (t.get('category') == cat and t.get('subcategory') == sub)]
-            self.save_data()
-            self.refresh_all_bd_views()
-    
-    # --- SUB-SUBCATEGORY ACTIONS (BD SPECIFIC) ---
-    
-    def bd_mgr_add_subsub(self):
-        cat = self.bd_mgr_cat_var.get()
-        sub = self.bd_mgr_sub_var.get()
-        name = self.bd_mgr_new_subsub_entry.get().strip()
-        if not cat or not sub: return messagebox.showwarning("Warning", "Select Category and Subcategory.")
-        if name and name not in self.bd_subcategories[cat][sub]:
-            self.bd_subcategories[cat][sub].append(name) # FIXED: Modify BD dict
-            self.save_data()
-            self.bd_mgr_new_subsub_entry.delete(0, 'end')
-            self.refresh_all_bd_views()
-            self.bd_mgr_subsub_combo.set(name)
-        else:
-            messagebox.showwarning("Warning", "Invalid or duplicate name.")
-    
-    def bd_mgr_rename_subsub(self):
-        cat = self.bd_mgr_cat_var.get()
-        sub = self.bd_mgr_sub_var.get()
-        old = self.bd_mgr_subsub_var.get()
-        if not cat or not sub or not old:
-            messagebox.showwarning("Warning", "Please select an item to rename.")
-            return
-            
-        new = simpledialog.askstring("Rename Item", f"Rename '{old}' to:", initialvalue=old)
-        if new and new != old:
-            idx = self.bd_subcategories[cat][sub].index(old) # FIXED: Modify BD dict
-            self.bd_subcategories[cat][sub][idx] = new
-            for t in self.bd_transactions:
-                if t.get('category') == cat and t.get('subcategory') == sub and t.get('subsubcategory') == old:
-                    t['subsubcategory'] = new
-            self.save_data()
-            self.refresh_all_bd_views()
-    
-    def bd_mgr_delete_subsub(self):
-        cat = self.bd_mgr_cat_var.get()
-        sub = self.bd_mgr_sub_var.get()
-        ss = self.bd_mgr_subsub_var.get()
-        if not cat or not sub or not ss:
-            messagebox.showwarning("Warning", "Please select an item to delete.")
-            return
-            
-        if messagebox.askyesno("Confirm Delete", f"Delete item '{ss}'?"):
-            if ss in self.bd_subcategories[cat][sub]: self.bd_subcategories[cat][sub].remove(ss) # FIXED: Modify BD dict
-            self.bd_transactions = [t for t in self.bd_transactions if not (t.get('category') == cat and t.get('subcategory') == sub and t.get('subsubcategory') == ss)]
-            self.save_data()
-            self.refresh_all_bd_views()
-        
-    
-    
-
-    def refresh_all_bd_views(self):
-        """Master function to update all BD tables and inputs after a change"""
-        # 1. Update Inputs
-        self.update_bd_category_combos()
-        
-        # 2. Update Table Views
-        if hasattr(self, 'update_bd_cat_table'): self.update_bd_cat_table()
-        if hasattr(self, 'update_bd_subcategories_table'): self.update_bd_subcategories_table()
-        if hasattr(self, 'update_bd_subsubcategories_table'): self.update_bd_subsubcategories_table()
-        
-        # 3. Update Manager Dropdowns
-        self.update_bd_mgr_lists()
-
-    
-
-    
-
-      
-   
-
-    
-
-    # --- END BD MANAGEMENT ---
-
-    def create_bd_analysis_tab(self, parent):
-        """UI for the BD Analysis Tab with hierarchical pie charts"""
-        # --- Filter Frame ---
-        filter_frame = ttk.LabelFrame(parent, text="BD Chart Filters", padding=10)
-        filter_frame.pack(fill='x', padx=10, pady=5)
-
-        # 1. Year Filter
-        ttk.Label(filter_frame, text="Year:").grid(row=0, column=0, padx=5)
-        self.bd_ana_year_var = tk.StringVar(value=str(datetime.now().year))
-        ttk.Combobox(filter_frame, textvariable=self.bd_ana_year_var, 
-                     values=[str(y) for y in range(2020, 2031)], width=8).grid(row=0, column=1, padx=5)
-
-        # 2. Month Filter
-        ttk.Label(filter_frame, text="Month:").grid(row=0, column=2, padx=5)
-        self.bd_ana_month_var = tk.StringVar(value="Whole Year")
-        months = ["Whole Year"] + [datetime(2000, m, 1).strftime('%B') for m in range(1, 13)]
-        ttk.Combobox(filter_frame, textvariable=self.bd_ana_month_var, values=months, width=12).grid(row=0, column=3, padx=5)
-
-        # 3. Plot Level
-        ttk.Label(filter_frame, text="Level:").grid(row=0, column=4, padx=5)
-        self.bd_ana_level_var = tk.StringVar(value="Category")
-        ttk.Combobox(filter_frame, textvariable=self.bd_ana_level_var, 
-                     values=["Category", "Subcategory", "Sub-subcategory"], width=15).grid(row=0, column=5, padx=5)
-
-        # 4. Hierarchical Selectors
-        ttk.Label(filter_frame, text="Category:").grid(row=1, column=0, padx=5, pady=5)
-        self.bd_ana_cat_var = tk.StringVar()
-        self.bd_ana_cat_combo = ttk.Combobox(filter_frame, textvariable=self.bd_ana_cat_var, 
-                                             values=self.categories, width=15)
-        self.bd_ana_cat_combo.grid(row=1, column=1, padx=5)
-        self.bd_ana_cat_combo.bind('<<ComboboxSelected>>', self.sync_bd_ana_pie_subs)
-
-        ttk.Label(filter_frame, text="Subcategory:").grid(row=1, column=2, padx=5)
-        self.bd_ana_sub_var = tk.StringVar()
-        self.bd_ana_sub_combo = ttk.Combobox(filter_frame, textvariable=self.bd_ana_sub_var, width=15)
-        self.bd_ana_sub_combo.grid(row=1, column=3, padx=5)
-
-        ttk.Button(filter_frame, text="Generate BD Chart", command=self.update_bd_pie_chart).grid(row=1, column=5, padx=10)
-
-        # Chart Container
-        self.bd_pie_container = ttk.Frame(parent)
-        self.bd_pie_container.pack(fill='both', expand=True, padx=10, pady=10)
-
-    def sync_bd_ana_pie_subs(self, event=None):
-        """Updates BD subcategory filter list based on Category"""
-        cat = self.bd_ana_cat_var.get()
-        if cat in self.subcategories:
-            subs = list(self.subcategories[cat].keys())
-            self.bd_ana_sub_combo['values'] = subs
-            self.bd_ana_sub_var.set('')
-
-    def update_bd_pie_chart(self):
-        """Processes BD transactions and plots the pie chart"""
-        for widget in self.bd_pie_container.winfo_children():
-            widget.destroy()
-
-        year = self.bd_ana_year_var.get()
-        month_name = self.bd_ana_month_var.get()
-        level = self.bd_ana_level_var.get()
-        sel_cat = self.bd_ana_cat_var.get()
-        sel_sub = self.bd_ana_sub_var.get()
-
-        target_month = None if month_name == "Whole Year" else datetime.strptime(month_name, '%B').month
-        data = defaultdict(float)
-
-        # Logic for aggregating BD Transactions
-        for t in self.bd_transactions:
-            try:
-                t_parts = t['date'].split('/')
-                if t_parts[2] != year: continue
-                if target_month and int(t_parts[1]) != target_month: continue
-                
-                if level == "Category":
-                    data[t['category']] += t['amount']
-                elif level == "Subcategory":
-                    if t['category'] == sel_cat:
-                        data[t['subcategory']] += t['amount']
-                elif level == "Sub-subcategory":
-                    if t['category'] == sel_cat and t['subcategory'] == sel_sub:
-                        ss = t.get('subsubcategory', 'General')
-                        data[ss] += t['amount']
-            except: continue
-
-        # Plotting
-        fig = Figure(figsize=(8, 6), dpi=100)
-        ax = fig.add_subplot(111)
-
-        if data:
-            labels = list(data.keys())
-            values = list(data.values())
-            ax.pie(values, labels=labels, autopct='%1.1f%%', startangle=140, colors=plt.cm.Set3.colors)
-            ax.set_title(f"BD {level} Breakdown\n({month_name} {year})", fontweight='bold')
-        else:
-            ax.text(0.5, 0.5, "No BD Data Found\nCheck Category/Subcategory selection", 
-                    ha='center', va='center', fontsize=12)
-            ax.set_title("No Data", fontweight='bold')
-
-        canvas = FigureCanvasTkAgg(fig, master=self.bd_pie_container)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill='both', expand=True)
-
-    # Fix for create_bd_subcategories_view method
-    def create_bd_subcategories_view(self, parent_frame):
-        # 1. Filter Section (Top)
-        filter_frame = ttk.LabelFrame(parent_frame, text="Filters", padding=5)
-        filter_frame.pack(fill='x', pady=5, padx=10)
-        
-        ttk.Label(filter_frame, text="Category:").pack(side='left')
-        self.bd_subcat_filter_cat = tk.StringVar()
-        bd_subcat_combo = ttk.Combobox(filter_frame, textvariable=self.bd_subcat_filter_cat, values=self.categories, width=20, state="readonly")
-        bd_subcat_combo.pack(side='left', padx=5)
-        
-        # Updated command to point directly to logic
-        ttk.Button(filter_frame, text="Update", command=self.update_bd_subcategories_table).pack(side='left', padx=10)
-        
-        # 2. Tree Container (Bottom)
-        table_frame = ttk.Frame(parent_frame)
-        table_frame.pack(fill='both', expand=True, padx=10, pady=5)
-        
-        # Vertical Scrollbar
-        vs = ttk.Scrollbar(table_frame, orient="vertical")
-        # Horizontal Scrollbar
-        hs = ttk.Scrollbar(table_frame, orient="horizontal")
-        
-        # Initialize Treeview
-        self.bd_subcat_tree_view = ttk.Treeview(table_frame, show='headings', height=18, 
-                                                yscrollcommand=vs.set, xscrollcommand=hs.set)
-        
-        vs.config(command=self.bd_subcat_tree_view.yview)
-        hs.config(command=self.bd_subcat_tree_view.xview)
-        
-        # --- PACKING ORDER (Fixes the "right side" issue) ---
-        vs.pack(side='right', fill='y')
-        hs.pack(side='bottom', fill='x')
-        self.bd_subcat_tree_view.pack(side='left', fill='both', expand=True)
-
-    # Fix for create_bd_subsubcategories_view method (around line 1560)
-    def create_bd_subsubcategories_view(self, parent_frame):
-        # 1. Filter Section
-        filter_frame = ttk.LabelFrame(parent_frame, text="Filters", padding=5)
-        filter_frame.pack(fill='x', pady=5, padx=10)
-        
-        ttk.Label(filter_frame, text="Category:").pack(side='left')
-        bd_subsubcat_cat_combo = ttk.Combobox(filter_frame, textvariable=self.bd_subsubcat_filter_cat, 
-                                              values=self.categories, width=20, state="readonly")
-        bd_subsubcat_cat_combo.pack(side='left', padx=5)
-        
-        ttk.Label(filter_frame, text="Subcategory:").pack(side='left')
-        bd_subsubcat_sub_combo = ttk.Combobox(filter_frame, textvariable=self.bd_subsubcat_filter_sub, 
-                                              state="readonly", width=20)
-        bd_subsubcat_sub_combo.pack(side='left', padx=5)
-        
-        # Cascading Binding
-        bd_subsubcat_cat_combo.bind('<<ComboboxSelected>>', 
-                                    lambda e: self.update_bd_subsub_filter_subs(bd_subsubcat_sub_combo))
-        
-        ttk.Button(filter_frame, text="Update", command=self.update_bd_subsubcategories_table).pack(side='left', padx=10)
-        
-        # 2. Tree Container
-        table_frame = ttk.Frame(parent_frame)
-        table_frame.pack(fill='both', expand=True, padx=10, pady=5)
-        
-        vs = ttk.Scrollbar(table_frame, orient="vertical")
-        hs = ttk.Scrollbar(table_frame, orient="horizontal")
-        
-        self.bd_subsubcat_tree_view = ttk.Treeview(table_frame, show='headings', height=18,
-                                                   yscrollcommand=vs.set, xscrollcommand=hs.set)
-        
-        vs.config(command=self.bd_subsubcat_tree_view.yview)
-        hs.config(command=self.bd_subsubcat_tree_view.xview)
-        
-        # --- PACKING ORDER ---
-        vs.pack(side='right', fill='y')
-        hs.pack(side='bottom', fill='x')
-        self.bd_subsubcat_tree_view.pack(side='left', fill='both', expand=True)
-
-    # Add this helper method
-    def update_bd_subsub_filter_subs(self, combo_widget):
-        """Update subcategory options based on selected category in BD Sub-Sub Tab"""
-        cat = self.bd_subsubcat_filter_cat.get() # Matches __init__
-        if cat in self.subcategories:
-            subs = list(self.subcategories.get(cat, {}).keys())
-            combo_widget['values'] = subs
-            if subs: 
-                self.bd_subsubcat_filter_sub.set(subs[0])
-            else:
-                self.bd_subsubcat_filter_sub.set('')
-   
-    # --- BD Helper Create/Update Functions ---
-    def update_bd_rate(self):
-        try:
-            new_rate = float(self.bd_rate_var.get())
-            if new_rate <= 0: raise ValueError
-            self.bd_conversion_rate = new_rate
-            self.save_data()
-            self.update_bd_display()
-            messagebox.showinfo("Success", "Rate updated successfully!")
-        except ValueError:
-            messagebox.showerror("Error", "Please enter a valid positive number for rate.")
-
-    def update_bd_display(self):
-        self.bd_taka_label.config(text=f"Balance: {self.bd_balance:.2f} Taka")
-        euro_eq = self.bd_balance / self.bd_conversion_rate if self.bd_conversion_rate else 0
-        self.bd_euro_label.config(text=f"({euro_eq:.2f} Euro)")
-
-    def add_bd_from_euro(self):
-        try:
-            euro = float(self.bd_euro_amount.get())
-            rate = float(self.bd_calc_rate.get())
-            if euro <= 0 or rate <= 0: raise ValueError
-            taka = euro * rate
-            self.bd_balance += taka
-            self.bd_conversion_rate = rate
-            self.bd_rate_var.set(rate)
-            self.save_data()
-            self.update_bd_display()
-            self.bd_euro_amount.delete(0, 'end')
-            messagebox.showinfo("Success", f"Added {taka:.2f} Taka to balance.")
-        except ValueError:
-            messagebox.showerror("Error", "Please enter valid amounts.")
-
-    def add_bd_taka(self):
-        try:
-            taka = float(self.bd_taka_amount.get())
-            if taka <= 0: raise ValueError
-            self.bd_balance += taka
-            self.save_data()
-            self.update_bd_display()
-            self.bd_taka_amount.delete(0, 'end')
-        except ValueError:
-            messagebox.showerror("Error", "Please enter valid amount.")
-
-        # --- BD HELPER CREATE/UPDATE FUNCTIONS (Updated) ---
-    
-    def update_bd_category_combos(self):
-        # FIX: Use self.bd_categories instead of self.categories
-        self.bd_exp_cat_combo['values'] = self.bd_categories
-        if self.bd_categories:
-            self.bd_exp_cat_var.set(self.bd_categories[0])
-            self.bd_update_subcategory_combo()
-            
-    def bd_update_subcategory_combo(self, event=None):
-        cat = self.bd_exp_cat_var.get()
-        # FIX: Use self.bd_subcategories instead of self.subcategories
-        cat_data = self.bd_subcategories.get(cat, {})
-        
-        if isinstance(cat_data, dict):
-            subs = list(cat_data.keys())
-        elif isinstance(cat_data, list):
-            subs = cat_data
-        else:
-            subs = []
-            
-        self.bd_exp_subcat_combo['values'] = subs
-        self.bd_exp_subcat_var.set('')
-        self.bd_update_subsubcategory_combo()
-            
-    def bd_update_subsubcategory_combo(self, event=None):
-        cat = self.bd_exp_cat_var.get()
-        sub = self.bd_exp_subcat_var.get()
-        
-        # FIX: Use self.bd_subcategories
-        sub_data = self.bd_subcategories.get(cat, {}).get(sub, [])
-        
-        if isinstance(sub_data, list):
-            pass
-        else:
-            sub_data = []
-            
-        self.bd_exp_subsubcat_combo['values'] = sub_data
-        self.bd_exp_subsubcat_var.set('')
-        
-    def add_bd_expenditure(self):
-        try:
-            category = self.bd_exp_cat_var.get()
-            subcategory = self.bd_exp_subcat_var.get()
-            subsubcategory = self.bd_exp_subsubcat_var.get()
-            amount = float(self.bd_exp_amount.get())
-            date = self.bd_exp_date.get_date().strftime('%d/%m/%Y')
-            
-            if not category: return
-            
-            self.bd_transactions.append({
-                'category': category,
-                'subcategory': subcategory,
-                'subsubcategory': subsubcategory,
-                'amount': amount,
-                'date': date
-            })
-            
-            self.bd_balance -= amount
-            
-            self.save_data()
-            # Update all BD views
-            self.update_bd_cat_table()
-            self.update_bd_subcategories_table()
-            self.update_bd_subsubcategories_table()
-            
-            self.bd_exp_amount.delete(0, 'end')
-            messagebox.showinfo("Success", "Expenditure added and balance updated!")
-        except ValueError:
-            messagebox.showerror("Error", "Please enter valid amount.")
-
-    # --- New BD Views Creation ---
-    def create_bd_categories_view(self, parent):
-        """BD Category View: Filter by Year only."""
-        filter_frame = ttk.Frame(parent, padding=10)
-        filter_frame.pack(fill='x')
-        
-        ttk.Label(filter_frame, text="Select Year:").pack(side='left', padx=5)
-        self.bd_db_year_var = tk.StringVar(value=str(datetime.now().year))
-        ttk.Combobox(filter_frame, textvariable=self.bd_db_year_var, values=[str(y) for y in range(2020, 2031)], width=10).pack(side='left')
-        
-        ttk.Button(filter_frame, text="Refresh Category Table", command=self.update_bd_cat_table).pack(side='left', padx=10)
-
-        self.bd_cat_tree = self._setup_tree_with_scroll(parent)
-
-   
-    def _setup_tree_with_scroll(self, parent):
-        """Helper to create a Treeview with a horizontal scrollbar attached."""
-        container = ttk.Frame(parent)
-        container.pack(fill='both', expand=True, padx=10, pady=5)
-        
-        tree = ttk.Treeview(container, show='headings', height=18)
-        h_scroll = ttk.Scrollbar(container, orient="horizontal", command=tree.xview)
-        tree.configure(xscrollcommand=h_scroll.set)
-        
-        tree.pack(side='top', fill='both', expand=True)
-        h_scroll.pack(side='bottom', fill='x')
-        return tree
-    
-   
-
-    def update_bd_categories_table(self, parent_frame=None):
-        """Similar to DB Category Table: Rows=Months, Cols=Categories"""
-        if not hasattr(self, 'bd_cat_tree'): return
-        tree = self.bd_cat_tree
-        
-        year = self.bd_db_year_var.get()
-        
-        monthly_data = defaultdict(lambda: defaultdict(float))
-        
-        for trans in self.bd_transactions:
-            # Filter
-            if trans['date'].endswith(year):
-                m = trans['date'].split('/')[1]
-                category = trans['category']
-                monthly_data[m][category] += trans['amount']
-        
-        columns = ['Month'] + self.categories + ['Total']
-        tree['columns'] = columns
-        tree['show'] = 'headings'
-        
-        for col in columns:
-            tree.heading(col, text=col)
-            tree.column(col, width=110, anchor='center')
-            
-        # Populate
-        cat_totals = defaultdict(float)
-        month_names = ["January", "February", "March", "April", "May", "June", 
-                       "July", "August", "September", "October", "November", "December"]
-        
-        for i, m_name in enumerate(month_names):
-            m_num = i + 1
-            row_data = [m_name]
-            row_total = 0
-            for cat in self.categories:
-                val = monthly_data[m_num].get(cat, 0)
-                row_data.append(f"{val:.0f}")
-                row_total += val
-                cat_totals[cat] += val
-            row_data.append(f"{row_total:.0f}")
-            tree.insert('', 'end', values=row_data)
-            
-        total_row = ['TOTAL']
-        grand_total = 0
-        for cat in self.categories:
-            total_row.append(f"{cat_totals[cat]:.0f}")
-            grand_total += cat_totals[cat]
-        total_row.append(f"{grand_total:.0f}")
-        tree.insert('', 'end', values=total_row, tags=('total',))
-        
-        # Average
-        avg_row = ['AVERAGE']
-        for cat in self.categories:
-            avg_row.append(f"{cat_totals[cat]/12:.2f}")
-        avg_row.append(f"{grand_total/12:.2f}")
-        tree.insert('', 'end', values=avg_row, tags=('avg',))
-        
-        tree.tag_configure('total', background='#d0e0ff', font=('Arial', 9, 'bold'))
-        tree.tag_configure('avg', background='#C5E1A5', font=('Arial', 9, 'bold'))
-
-    
-    
-    def update_bd_subcat_filter_sub(self, event, var_sub):
-        cat = var_sub.get()
-        if cat in self.subcategories:
-            subs = list(self.subcategories.get(cat, {}).keys())
-            var_sub['values'] = subs
-            if subs: var_sub.current(0)
-
-    
-    
-        
-    
-
-                
-    def sync_bd_db_ss_filters(self, event=None):
-        """Updates the Subcategory dropdown specifically for the BD Sub-Sub Tab."""
-        cat = self.bd_db_ss_cat_var.get()
-        if cat in self.subcategories:
-            subs = list(self.subcategories[cat].keys())
-            self.bd_db_ss_sub_combo['values'] = subs
-            self.bd_db_ss_sub_var.set('')
-
-    
-    def update_bd_cat_table(self, parent_frame=None):
-        """BD Category View: Uses BD Categories."""
-        if not hasattr(self, 'bd_cat_tree'): return
-        tree = self.bd_cat_tree
-        year = self.bd_db_year_var.get()
-        
-        monthly_data = defaultdict(lambda: defaultdict(float))
-        for trans in self.bd_transactions:
-            if trans['date'].endswith(year):
-                m = trans['date'].split('/')[1]
-                category = trans['category']
-                monthly_data[m][category] += trans['amount']
-        
-        # FIXED: Use self.bd_categories
-        columns = ['Month'] + self.bd_categories + ['Total']
-        tree['columns'] = columns
-        tree['show'] = 'headings'
-        
-        for col in columns:
-            tree.heading(col, text=col)
-            tree.column(col, width=110, anchor='center')
-            
-        # Populate...
-        cat_totals = defaultdict(float)
-        month_names = ["January", "February", "March", "April", "May", "June", 
-                       "July", "August", "September", "October", "November", "December"]
-        
-        for i, m_name in enumerate(month_names):
-            m_num = i + 1
-            row_data = [m_name]
-            row_total = 0
-            for cat in self.bd_categories: # FIXED
-                val = monthly_data[m_num].get(cat, 0)
-                row_data.append(f"{val:.0f}")
-                row_total += val
-                cat_totals[cat] += val
-            row_data.append(f"{row_total:.0f}")
-            tree.insert('', 'end', values=row_data)
-            
-        # Total and Average rows logic...
-        # (Ensure you loop through self.bd_categories here too)
-        total_row = ['TOTAL']
-        grand_total = 0
-        for cat in self.bd_categories:
-            total_row.append(f"{cat_totals[cat]:.0f}")
-            grand_total += cat_totals[cat]
-        total_row.append(f"{grand_total:.0f}")
-        tree.insert('', 'end', values=total_row, tags=('total',))
-        
-        avg_row = ['AVERAGE']
-        for cat in self.bd_categories:
-            avg_row.append(f"{cat_totals[cat]/12:.2f}")
-        avg_row.append(f"{grand_total/12:.2f}")
-        tree.insert('', 'end', values=avg_row, tags=('avg',))
-        
-        tree.tag_configure('total', background='#d0e0ff', font=('Arial', 9, 'bold'))
-        tree.tag_configure('avg', background='#C5E1A5', font=('Arial', 9, 'bold'))
-
-    def update_bd_subcategories_table(self, parent_frame=None):
-        """BD Subcategory Matrix: Uses BD Subcategories."""
-        year = self.bd_db_year_var.get()
-        cat = self.bd_subcat_filter_cat.get()
-        if not hasattr(self, 'bd_subcat_tree_view'): return
-        tree = self.bd_subcat_tree_view
-        
-        if not cat: return
-
-        # FIXED: Use self.bd_subcategories
-        subs = list(self.bd_subcategories.get(cat, {}).keys())
-        
-        matrix = defaultdict(lambda: defaultdict(float))
-        for t in self.bd_transactions:
-            d_parts = t.get('date', '').split('/')
-            if len(d_parts) == 3:
-                t_day, t_month, t_year = d_parts
-                if t_year == year and t.get('category') == cat:
-                    try:
-                        m_idx = int(t_month)
-                        sub_name = t.get('subcategory')
-                        if sub_name in subs:
-                            matrix[m_idx][sub_name] += float(t.get('amount', 0))
-                    except ValueError: continue
-        
-        self._render_database_rows(tree, subs, matrix)
-
-    def update_bd_subsubcategories_table(self, parent_frame=None):
-        """BD Sub-Subcategory Matrix: Uses BD Subsubcategories."""
-        year = self.bd_db_year_var.get()
-        cat = self.bd_subsubcat_filter_cat.get()
-        sub = self.bd_subsubcat_filter_sub.get()
-        if not hasattr(self, 'bd_subsubcat_tree_view'): return
-        tree = self.bd_subsubcat_tree_view
-        
-        if not cat or not sub: return
-
-        # FIXED: Use self.bd_subcategories
-        ss_list = self.bd_subcategories.get(cat, {}).get(sub, [])
-        
-        matrix = defaultdict(lambda: defaultdict(float))
-        for t in self.bd_transactions:
-            d_parts = t.get('date', '').split('/')
-            if len(d_parts) == 3:
-                t_day, t_month, t_year = d_parts
-                if t_year == year and t.get('category') == cat and t.get('subcategory') == sub:
-                    try:
-                        m_idx = int(t_month)
-                        ss_name = t.get('subsubcategory')
-                        if ss_name in ss_list:
-                            matrix[m_idx][ss_name] += float(t.get('amount', 0))
-                    except ValueError: continue
-
-        self._render_database_rows(tree, ss_list, matrix)
-
-    
-
-    
-    def update_bd_subcat_table(self):
-        year = self.bd_db_year_var.get()
-        cat = self.bd_db_sub_cat_var.get()
-        if not cat: return
-        subs = list(self.subcategories.get(cat, {}).keys())
-        matrix = defaultdict(lambda: defaultdict(float))
-        for t in self.bd_transactions:
-            if t.get('date', '').endswith(year) and t.get('category') == cat:
-                try:
-                    m_idx = int(t['date'].split('/')[1])
-                    matrix[m_idx][t['subcategory']] += float(t['amount'])
-                except: continue
-        self._render_bd_matrix(self.bd_subcat_tree, subs, matrix)
-
-    def update_bd_subsub_table(self):
-        year = self.bd_db_year_var.get()
-        cat = self.bd_db_ss_cat_var.get()
-        sub = self.bd_db_ss_sub_var.get()
-        if not cat or not sub: return
-        ss_list = self.subcategories.get(cat, {}).get(sub, [])
-        matrix = defaultdict(lambda: defaultdict(float))
-        for t in self.bd_transactions:
-            if t.get('date', '').endswith(year) and t.get('category') == cat and t.get('subcategory') == sub:
-                try:
-                    m_idx = int(t['date'].split('/')[1])
-                    matrix[m_idx][t.get('subsubcategory', '')] += float(t['amount'])
-                except: continue
-        self._render_bd_matrix(self.bd_subsub_tree, ss_list, matrix)  
-           
-    def _render_bd_matrix(self, tree, col_items, matrix):
-        """Standardized matrix renderer for BD Section tables."""
-        month_names = ["January", "February", "March", "April", "May", "June", 
-                       "July", "August", "September", "October", "November", "December"]
-        
-        # --- CRITICAL FIX: Clear displaycolumns before updating ---
-        # This prevents the "Invalid column index" crash when deleting categories
-        tree['displaycolumns'] = () 
-        
-        # 1. Reset Columns
-        full_cols = ['Month'] + list(col_items) + ['Total']
-        tree['columns'] = full_cols
-        tree['displaycolumns'] = full_cols 
-        
-        for c in full_cols:
-            tree.heading(c, text=c)
-            # stretch=False forces the horizontal scrollbar to become active
-            tree.column(c, width=120, anchor='center', stretch=False)
-
-        # 2. Clear Table
-        for item in tree.get_children():
-            tree.delete(item)
-
-        # 3. Calculate and Insert Month Rows
-        grand_total = 0
-        col_sums = defaultdict(float)
-
-        for m_idx in range(1, 13):
-            row = [month_names[m_idx-1]]
-            row_sum = 0
-            for item in col_items:
-                val = matrix[m_idx][item]
-                row.append(f"{val:.0f}") # BD usually uses whole numbers (Taka)
-                row_sum += val
-                col_sums[item] += val
-            row.append(f"{row_sum:.0f}")
-            grand_total += row_sum
-            tree.insert('', 'end', values=row)
-
-        # 4. Insert Footer Rows (Total & Average)
-        t_row = ["TOTAL"]
-        a_row = ["AVERAGE"]
-        for item in col_items:
-            t_row.append(f"{col_sums[item]:.0f}")
-            a_row.append(f"{(col_sums[item]/12):.1f}")
-        
-        t_row.append(f"{grand_total:.0f}")
-        a_row.append(f"{(grand_total/12):.1f}")
-        
-        tree.insert('', 'end', values=t_row, tags=('bold',))
-        tree.insert('', 'end', values=a_row, tags=('bold',))
-        tree.tag_configure('bold', background='#f0f0f0', font=('Arial', 10, 'bold'))
-
-    def refresh_bd_summary_matrix(self):
-        """Generates Pivot Table based on 'Group By' selection"""
-        tree = self.bd_matrix_tree
-        for item in tree.get_children():
-            tree.delete(item)
-        
-        year = datetime.now().year 
-        group_by = self.bd_group_var.get()
-        
-        # 1. Determine Columns based on Group By
-        cols = []
-        
-        if group_by == "Category":
-            # Show all "Subcategories" (e.g., "Food", "Cloth")
-            for cat, sub_dict in self.subcategories.items():
-                for sub_name in sub_dict.keys():
-                    cols.append(f"{cat} > {sub_name}")
-        elif group_by == "Subcategory":
-            # Show all "Sub-subcategories" (e.g., "Aldi", "Lidl")
-            for cat, sub_dict in self.subcategories.items():
-                for sub_name, sub_list in sub_dict.items():
-                    if isinstance(sub_list, list):
-                        for subsub in sub_list:
-                            cols.append(f"{sub_name} > {subsub}")
-        elif group_by == "Subsubcategory":
-            # Show all sub-subcategories (Max Detail)
-            for cat, sub_dict in self.subcategories.items():
-                for sub_name, sub_list in sub_dict.items():
-                    if isinstance(sub_list, list):
-                        for subsub in sub_list:
-                            cols.append(f"{sub_name} > {subsub}")
-        else:
-            cols = []
-
-        if not cols:
-            tree.insert('', 'end', values=('No Data',))
-            return
-
-        # 2. Setup Columns: Month + Selected Groups + Total + Average
-        columns = ['Month'] + cols + ['Total']
-        tree['columns'] = columns
-        tree['show'] = 'headings'
-        
-        # Adjust widths dynamically
-        num_cols = len(columns)
-        if num_cols > 5:
-            col_width = 80
-        else:
-            col_width = 120
-        for col in columns:
-            tree.heading(col, text=col)
-            tree.column(col, width=col_width, anchor='center')
-
-        # 3. Calculate Data
-        month_data = defaultdict(lambda: defaultdict(float))
-        
-        for trans in self.bd_transactions:
-            # Filter by current year (assumed for this view)
-            if trans['date'].endswith(str(year)):
-                m = trans['date'].split('/')[1]
-                col_name = ""
-                
-                if group_by == "Category":
-                    # Construct Col Name
-                    col_name = f"{trans['category']} > {trans.get('subcategory', '')}"
-                    month_data[m][col_name] += trans['amount']
-                    
-                elif group_by == "Subcategory":
-                    # Construct Col Name
-                    col_name = f"{trans.get('subcategory', '')} > {trans.get('subsubcategory', 'General')}"
-                    month_data[m][col_name] += trans['amount']
-                    
-                elif group_by == "Subsubcategory":
-                    # Just use subsubcategory as column
-                    col_name = trans.get('subsubcategory', 'General')
-                    month_data[m][col_name] += trans['amount']
-
-        # 4. Populate Tree
-        month_names = ["January", "February", "March", "April", "May", "June", 
-                       "July", "August", "September", "October", "November", "December"]
-        
-        col_totals = defaultdict(float)
-        
-        for i, m_name in enumerate(month_names):
-            m_num = i + 1
-            row_data = [m_name]
-            row_total = 0
-            for col in cols:
-                if col == 'Total': continue
-                val = month_data[m_num].get(col, 0)
-                row_data.append(f"{val:.0f}")
-                row_total += val
-                col_totals[col] += val
-            row_data.append(f"{row_total:.0f}")
-            tree.insert('', 'end', values=row_data, tags=('row',))
-            
-        # 5. Total Row
-        total_row = ['TOTAL']
-        grand_total = 0
-        for col in cols:
-            if col == 'Total': continue
-            total_row.append(f"{col_totals[col]:.0f}")
-            grand_total += col_totals[col]
-        total_row.append(f"{grand_total:.0f}")
-        tree.insert('', 'end', values=total_row, tags=('total',))
-        
-        # 6. Average Row
-        avg_row = ['AVERAGE']
-        for col in cols:
-            if col == 'Total': continue
-            avg_row.append(f"{col_totals[col]/12:.2f}")
-        avg_row.append(f"{grand_total/12:.2f}")
-        tree.insert('', 'end', values=avg_row, tags=('avg',))
-        
-        # 7. Zebra Styling
-        items = tree.get_children()
-        for idx, item in enumerate(items):
-            tag = 'row'
-            if idx % 2 == 0:
-                tag = 'row_odd'
-            else:
-                tag = 'row_even'
-            tree.item(item, tags=(tag,))
-            
-        tree.tag_configure('row_odd', background='#ffffff')
-        tree.tag_configure('row_even', background='#f2f2f2')
-        tree.tag_configure('total', background='#d0e0ff', font=('Arial', 9, 'bold'))
-        tree.tag_configure('avg', background='#C5E1A5', font=('Arial', 9, 'bold'))
-
-    # --- Investment Section ---
-    def create_investment_tab(self):
-        input_frame = ttk.LabelFrame(self.investment_tab, text="Investment Management", padding=10)
-        input_frame.pack(fill='x', padx=10, pady=5)
-        
-        invest_frame = ttk.LabelFrame(input_frame, text="Add Investment", padding=10)
-        invest_frame.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
-        
-        ttk.Label(invest_frame, text="Category:").grid(row=0, column=0, sticky='w', pady=2)
-        self.invest_category = ttk.Entry(invest_frame, width=25)
-        self.invest_category.grid(row=0, column=1, sticky='ew', pady=2, padx=5)
-        
-        ttk.Label(invest_frame, text="Amount (€):").grid(row=1, column=0, sticky='w', pady=2)
-        self.invest_amount = ttk.Entry(invest_frame, width=25)
-        self.invest_amount.grid(row=1, column=1, sticky='ew', pady=2, padx=5)
-        
-        ttk.Label(invest_frame, text="Date:").grid(row=2, column=0, sticky='w', pady=2)
-        self.invest_date = DateEntry(invest_frame, date_pattern='dd/mm/yyyy', width=23)
-        self.invest_date.grid(row=2, column=1, sticky='ew', pady=2, padx=5)
-        
-        ttk.Label(invest_frame, text="Description:").grid(row=3, column=0, sticky='w', pady=2)
-        self.invest_desc = ttk.Entry(invest_frame, width=25)
-        self.invest_desc.grid(row=3, column=1, sticky='ew', pady=2, padx=5)
-        
-        ttk.Button(invest_frame, text="Add Investment", command=self.add_investment).grid(row=4, column=0, columnspan=2, pady=10)
-        
-        return_frame = ttk.LabelFrame(input_frame, text="Add Return/Profit", padding=10)
-        return_frame.grid(row=0, column=1, sticky='nsew', padx=5, pady=5)
-        
-        ttk.Label(return_frame, text="Investment Category:").grid(row=0, column=0, sticky='w', pady=2)
-        self.return_category_var = tk.StringVar()
-        self.return_category_combo = ttk.Combobox(return_frame, textvariable=self.return_category_var,
-                                                  width=23, state="readonly")
-        self.return_category_combo.grid(row=0, column=1, sticky='ew', pady=2, padx=5)
-        
-        ttk.Label(return_frame, text="Return Amount (€):").grid(row=1, column=0, sticky='w', pady=2)
-        self.return_amount = ttk.Entry(return_frame, width=25)
-        self.return_amount.grid(row=1, column=1, sticky='ew', pady=2, padx=5)
-        
-        ttk.Label(return_frame, text="Date:").grid(row=2, column=0, sticky='w', pady=2)
-        self.return_date = DateEntry(return_frame, date_pattern='dd/mm/yyyy', width=23)
-        self.return_date.grid(row=2, column=1, sticky='ew', pady=2, padx=5)
-        
-        ttk.Label(return_frame, text="Type:").grid(row=3, column=0, sticky='w', pady=2)
-        self.return_type_var = tk.StringVar(value="Profit")
-        return_type_combo = ttk.Combobox(return_frame, textvariable=self.return_type_var,
-                                        values=["Profit", "Return"], width=23, state="readonly")
-        return_type_combo.grid(row=3, column=1, sticky='ew', pady=2, padx=5)
-        
-        ttk.Button(return_frame, text="Add Return/Profit", command=self.add_return).grid(row=4, column=0, columnspan=2, pady=10)
-        
-        input_frame.grid_columnconfigure(0, weight=1)
-        input_frame.grid_columnconfigure(1, weight=1)
-        
-        summary_frame = ttk.LabelFrame(self.investment_tab, text="Investment Summary", padding=10)
-        summary_frame.pack(fill='x', padx=10, pady=5)
-        
-        self.total_invested_label = ttk.Label(summary_frame, text="Total Invested: €0.00", 
-                                             font=('Arial', 11, 'bold'), foreground='blue')
-        self.total_invested_label.pack(side='left', padx=20)
-        
-        self.total_returns_label = ttk.Label(summary_frame, text="Total Returns: €0.00", 
-                                            font=('Arial', 11, 'bold'), foreground='green')
-        self.total_returns_label.pack(side='left', padx=20)
-        
-        self.net_profit_label = ttk.Label(summary_frame, text="Net Profit: €0.00", 
-                                         font=('Arial', 11, 'bold'), foreground='darkgreen')
-        self.net_profit_label.pack(side='left', padx=20)
-        
-        display_frame = ttk.LabelFrame(self.investment_tab, text="Investment Details", padding=5)
-        display_frame.pack(fill='both', expand=True, padx=10, pady=5)
-        
-        invest_notebook = ttk.Notebook(display_frame)
-        invest_notebook.pack(fill='both', expand=True)
-        
-        investments_tab = ttk.Frame(invest_notebook)
-        invest_notebook.add(investments_tab, text="Investments")
-        
-        invest_table_frame = ttk.Frame(investments_tab)
-        invest_table_frame.pack(fill='both', expand=True, padx=5, pady=5)
-        
-        invest_scroll = ttk.Scrollbar(invest_table_frame, orient='vertical')
-        self.invest_tree = ttk.Treeview(invest_table_frame, yscrollcommand=invest_scroll.set,
-                                       columns=('Date', 'Category', 'Amount', 'Description'), show='headings')
-        invest_scroll.config(command=self.invest_tree.yview)
-        
-        self.invest_tree.heading('Date', text='Date')
-        self.invest_tree.heading('Category', text='Category')
-        self.invest_tree.heading('Amount', text='Amount')
-        self.invest_tree.heading('Description', text='Description')
-        
-        self.invest_tree.column('Date', width=100, anchor='center')
-        self.invest_tree.column('Category', width=150, anchor='center')
-        self.invest_tree.column('Amount', width=100, anchor='center')
-        self.invest_tree.column('Description', width=200, anchor='center')
-        
-        invest_scroll.pack(side='right', fill='y')
-        self.invest_tree.pack(side='left', fill='both', expand=True)
-        
-        returns_tab = ttk.Frame(invest_notebook)
-        invest_notebook.add(returns_tab, text="Returns/Profits")
-        
-        return_table_frame = ttk.Frame(returns_tab)
-        return_table_frame.pack(fill='both', expand=True, padx=5, pady=5)
-        
-        return_scroll = ttk.Scrollbar(return_table_frame, orient='vertical')
-        self.return_tree = ttk.Treeview(return_table_frame, yscrollcommand=return_scroll.set,
-                                       columns=('Date', 'Category', 'Amount', 'Type'), show='headings')
-        return_scroll.config(command=self.return_tree.yview)
-        
-        self.return_tree.heading('Date', text='Date')
-        self.return_tree.heading('Category', text='Category')
-        self.return_tree.heading('Amount', text='Amount')
-        self.return_tree.heading('Type', text='Type')
-        
-        self.return_tree.column('Date', width=100, anchor='center')
-        self.return_tree.column('Category', width=150, anchor='center')
-        self.return_tree.column('Amount', width=100, anchor='center')
-        self.return_tree.column('Type', width=150, anchor='center')
-        
-        return_scroll.pack(side='right', fill='y')
-        self.return_tree.pack(side='left', fill='both', expand=True)
-        
-        self.update_investment_display()
-    
-    def update_investment_display(self):
-        for item in self.invest_tree.get_children():
-            self.invest_tree.delete(item)
-        for item in self.return_tree.get_children():
-            self.return_tree.delete(item)
-        
-        total_invested = 0
-        for inv in self.investments:
-            self.invest_tree.insert('', 'end', values=(
-                inv['date'],
-                inv['category'],
-                f"€{inv['amount']:.2f}",
-                inv['description']
-            ))
-            total_invested += inv['amount']
-        
-        total_returns = 0
-        for ret in self.investment_returns:
-            self.return_tree.insert('', 'end', values=(
-                ret['date'],
-                ret['category'],
-                f"€{ret['amount']:.2f}",
-                ret['type']
-            ))
-            total_returns += ret['amount']
-        
-        net_profit = total_returns - total_invested
-        self.total_invested_label.config(text=f"Total Invested: €{total_invested:.2f}")
-        self.total_returns_label.config(text=f"Total Returns: €{total_returns:.2f}")
-        
-        if net_profit >= 0:
-            self.net_profit_label.config(text=f"Net Profit: €{net_profit:.2f}", foreground='darkgreen')
-        else:
-            self.net_profit_label.config(text=f"Net Loss: €{abs(net_profit):.2f}", foreground='red')
-    
-    def add_investment(self):
-        try:
-            category = self.invest_category.get().strip()
-            amount = float(self.invest_amount.get())
-            date = self.invest_date.get_date().strftime('%d/%m/%Y')
-            description = self.invest_desc.get().strip()
-            
-            if not category:
-                messagebox.showwarning("Warning", "Please enter a category!")
+            if df.empty:
+                self.canvas_bot.draw()
                 return
             
-            self.investments.append({
-                'category': category,
-                'amount': amount,
-                'date': date,
-                'description': description
-            })
+            counts = df[df["type"] == "Investment"].groupby("category")["amount"].sum()
+            counts.plot(kind="pie", ax=self.ax_bot, autopct='%1.1f%%')
+            self.ax_bot.set_ylabel("")
+            self.ax_bot.set_title("Investment Distribution")
             
-            if category not in self.investment_categories:
-                self.investment_categories.append(category)
-                self.update_investment_category_combo()
+        else:
+            df = pd.DataFrame(self.dm.data["expenses"])
+            if df.empty: return
+            df["year"] = pd.to_datetime(df["date"]).dt.year
+            if year != "All": df = df[df["year"] == int(year)]
             
-            self.invest_category.delete(0, 'end')
-            self.invest_amount.delete(0, 'end')
-            self.invest_desc.delete(0, 'end')
+            if ptype in ["GER", "BD"]:
+                df = df[df["region"] == ptype]
             
-            self.save_data()
-            self.update_investment_display()
-            messagebox.showinfo("Success", "Investment added successfully!")
-        except ValueError:
-            messagebox.showerror("Error", "Please enter a valid amount!")
-            
-    def add_return(self):
-        try:
-            category = self.return_category_var.get()
-            amount = float(self.return_amount.get())
-            date = self.return_date.get_date().strftime('%d/%m/%Y')
-            return_type = self.return_type_var.get()
-            
-            if not category:
-                messagebox.showwarning("Warning", "Please select an investment category!")
+            if df.empty:
+                self.canvas_bot.draw()
                 return
             
-            self.investment_returns.append({
-                'category': category,
-                'amount': amount,
-                'date': date,
-                'type': return_type
-            })
+            col = "category"
+            if "sub" in level: col = "subcategory"
+            if "subsub" in level: col = "subsubcategory"
             
-            self.return_amount.delete(0, 'end')
+            counts = df.groupby(col)["amount_eur"].sum()
+            counts.plot(kind="pie", ax=self.ax_bot, autopct='%1.1f%%')
+            self.ax_bot.set_ylabel("")
+            self.ax_bot.set_title(f"Expense Breakdown: {level} ({ptype})")
             
-            self.save_data()
-            self.update_investment_display()
-            messagebox.showinfo("Success", "Return/Profit added successfully!")
-        except ValueError:
-            messagebox.showerror("Error", "Please enter a valid amount!")
-    
-    def update_investment_category_combo(self):
-        self.return_category_combo['values'] = sorted(self.investment_categories)
-        if self.investment_categories and not self.return_category_var.get():
-            self.return_category_var.set(self.investment_categories[0])
-            
-    # --- Analysis Section (RESTORED) ---
-    
-    def create_detailed_analysis_tab(self):
-        # Filter Frame
-        filter_frame = ttk.LabelFrame(self.detailed_analysis_tab, text="Hierarchy Analysis Filters", padding=10)
-        filter_frame.pack(fill='x', padx=10, pady=5)
-
-        # 1. Year
-        ttk.Label(filter_frame, text="Year:").grid(row=0, column=0, padx=5)
-        self.det_year_var = tk.StringVar(value=str(datetime.now().year))
-        ttk.Combobox(filter_frame, textvariable=self.det_year_var, values=[str(y) for y in range(2020, 2031)], width=8).grid(row=0, column=1, padx=5)
-
-        # 2. Month (with "Whole Year" option)
-        ttk.Label(filter_frame, text="Month:").grid(row=0, column=2, padx=5)
-        self.det_month_var = tk.StringVar(value="Whole Year")
-        month_options = ["Whole Year"] + [datetime(2000, m, 1).strftime('%B') for m in range(1, 13)]
-        ttk.Combobox(filter_frame, textvariable=self.det_month_var, values=month_options, width=12).grid(row=0, column=3, padx=5)
-
-        # 3. Category
-        ttk.Label(filter_frame, text="Category:").grid(row=0, column=4, padx=5)
-        self.det_cat_var = tk.StringVar()
-        self.det_cat_combo = ttk.Combobox(filter_frame, textvariable=self.det_cat_var, values=self.categories, width=15)
-        self.det_cat_combo.grid(row=0, column=5, padx=5)
-        self.det_cat_combo.bind('<<ComboboxSelected>>', self.sync_detailed_analysis_subs)
-
-        # 4. Subcategory
-        ttk.Label(filter_frame, text="Subcategory:").grid(row=0, column=6, padx=5)
-        self.det_sub_var = tk.StringVar()
-        self.det_sub_combo = ttk.Combobox(filter_frame, textvariable=self.det_sub_var, width=15)
-        self.det_sub_combo.grid(row=0, column=7, padx=5)
-
-        # Update Button
-        ttk.Button(filter_frame, text="Generate Pie Chart", command=self.update_detailed_charts).grid(row=0, column=8, padx=15)
-
-        # Chart Frame
-        self.det_chart_frame = ttk.Frame(self.detailed_analysis_tab)
-        self.det_chart_frame.pack(fill='both', expand=True, padx=10, pady=10)
-
-    def sync_detailed_analysis_subs(self, event=None):
-        """Updates the subcategory dropdown based on selected category in Detailed Analysis"""
-        cat = self.det_cat_var.get()
-        if cat in self.subcategories:
-            subs = list(self.subcategories[cat].keys())
-            self.det_sub_combo['values'] = ["All Subcategories"] + subs
-            self.det_sub_var.set("All Subcategories")
-        else:
-            self.det_sub_combo['values'] = []
-            self.det_sub_var.set("")
-
-
-        
-   
-    
-    def create_analysis_tab(self):
-        # We use a Canvas with a Scrollbar to ensure all sections fit
-        ana_canvas = tk.Canvas(self.analysis_tab)
-        v_scroll = ttk.Scrollbar(self.analysis_tab, orient="vertical", command=ana_canvas.yview)
-        self.ana_scroll_frame = ttk.Frame(ana_canvas)
-
-        self.ana_scroll_frame.bind("<Configure>", lambda e: ana_canvas.configure(scrollregion=ana_canvas.bbox("all")))
-        ana_canvas.create_window((0, 0), window=self.ana_scroll_frame, anchor="nw")
-        ana_canvas.configure(yscrollcommand=v_scroll.set)
-
-        v_scroll.pack(side="right", fill="y")
-        ana_canvas.pack(side="left", fill="both", expand=True)
-
-        # ---------------------------------------------------------
-        # SECTION 1: YEARLY OVERVIEW (BAR PLOT)
-        # ---------------------------------------------------------
-        sec1 = ttk.LabelFrame(self.ana_scroll_frame, text="Section 1: Yearly Income vs Expense Overview", padding=10)
-        sec1.pack(fill='x', padx=10, pady=10)
-
-        s1_filter = ttk.Frame(sec1)
-        s1_filter.pack(fill='x', pady=5)
-        
-        ttk.Label(s1_filter, text="Select Year:").pack(side='left', padx=5)
-        self.ana_bar_year_var = tk.StringVar(value=str(datetime.now().year))
-        ttk.Combobox(s1_filter, textvariable=self.ana_bar_year_var, values=[str(y) for y in range(2020, 2031)], width=10).pack(side='left', padx=5)
-        ttk.Button(s1_filter, text="Refresh Bar Chart", command=self.update_bar_chart).pack(side='left', padx=10)
-
-        self.bar_chart_container = ttk.Frame(sec1)
-        self.bar_chart_container.pack(fill='x', pady=5)
-
-        # ---------------------------------------------------------
-        # SECTION 2: DETAILED PIE CHART ANALYSIS
-        # ---------------------------------------------------------
-        sec2 = ttk.LabelFrame(self.ana_scroll_frame, text="Section 2: Detailed Pie Chart Analysis", padding=10)
-        sec2.pack(fill='x', padx=10, pady=10)
-
-        s2_filter = ttk.Frame(sec2)
-        s2_filter.pack(fill='x', pady=5)
-
-        # Time Filters
-        ttk.Label(s2_filter, text="Year:").grid(row=0, column=0, padx=5, sticky='w')
-        self.ana_pie_year_var = tk.StringVar(value=str(datetime.now().year))
-        ttk.Combobox(s2_filter, textvariable=self.ana_pie_year_var, values=[str(y) for y in range(2020, 2031)], width=8).grid(row=0, column=1, padx=5)
-
-        ttk.Label(s2_filter, text="Month:").grid(row=0, column=2, padx=5, sticky='w')
-        self.ana_pie_month_var = tk.StringVar(value="Whole Year")
-        months = ["Whole Year"] + [datetime(2000, m, 1).strftime('%B') for m in range(1, 13)]
-        ttk.Combobox(s2_filter, textvariable=self.ana_pie_month_var, values=months, width=12).grid(row=0, column=3, padx=5)
-
-        # Hierarchy Type
-        ttk.Label(s2_filter, text="Plot Level:").grid(row=0, column=4, padx=5, sticky='w')
-        self.ana_pie_level_var = tk.StringVar(value="Category")
-        ttk.Combobox(s2_filter, textvariable=self.ana_pie_level_var, values=["Category", "Subcategory", "Sub-subcategory"], width=15).grid(row=0, column=5, padx=5)
-
-        # Category/Subcat Selectors
-        ttk.Label(s2_filter, text="If Sub/Sub-Sub, Select Cat:").grid(row=1, column=0, padx=5, pady=5, sticky='w')
-        self.ana_pie_cat_var = tk.StringVar()
-        self.ana_pie_cat_combo = ttk.Combobox(s2_filter, textvariable=self.ana_pie_cat_var, values=self.categories, width=15)
-        self.ana_pie_cat_combo.grid(row=1, column=1, padx=5)
-        self.ana_pie_cat_combo.bind('<<ComboboxSelected>>', self.sync_ana_pie_subs)
-
-        ttk.Label(s2_filter, text="If Sub-Sub, Select Subcat:").grid(row=1, column=2, padx=5, sticky='w')
-        self.ana_pie_sub_var = tk.StringVar()
-        self.ana_pie_sub_combo = ttk.Combobox(s2_filter, textvariable=self.ana_pie_sub_var, width=15)
-        self.ana_pie_sub_combo.grid(row=1, column=3, padx=5)
-
-        ttk.Button(s2_filter, text="Update Pie Chart", command=self.update_pie_chart).grid(row=1, column=5, padx=10)
-
-        self.pie_chart_container = ttk.Frame(sec2)
-        self.pie_chart_container.pack(fill='x', pady=5)
-
-        # Initial plot
-        self.update_bar_chart()
-
-    def sync_ana_pie_subs(self, event=None):
-        cat = self.ana_pie_cat_var.get()
-        if cat in self.subcategories:
-            subs = list(self.subcategories[cat].keys())
-            self.ana_pie_sub_combo['values'] = subs
-            self.ana_pie_sub_var.set('')
-
-    def update_bar_chart(self):
-        """Logic for Section 1: Bar Plot"""
-        for widget in self.bar_chart_container.winfo_children():
-            widget.destroy()
-        
-        year = self.ana_bar_year_var.get()
-        monthly_income = defaultdict(float)
-        monthly_expense = defaultdict(float)
-
-        for inc in self.income_sources:
-            if inc['date'].endswith(year):
-                m = int(inc['date'].split('/')[1])
-                monthly_income[m] += inc['amount']
-        
-        for t in self.transactions:
-            if t['date'].endswith(year):
-                m = int(t['date'].split('/')[1])
-                monthly_expense[m] += t['amount']
-
-        fig = Figure(figsize=(12, 4), dpi=100)
-        ax = fig.add_subplot(111)
-        x = range(1, 13)
-        width = 0.35
-        
-        ax.bar([i - width/2 for i in x], [monthly_income[i] for i in x], width, label='Income', color='#4CAF50')
-        ax.bar([i + width/2 for i in x], [monthly_expense[i] for i in x], width, label='Expense', color='#F44336')
-        
-        ax.set_title(f"Yearly Overview: Income vs Expense ({year})", fontweight='bold')
-        ax.set_xticks(x)
-        ax.set_xticklabels([datetime(2000, m, 1).strftime('%b') for m in x])
-        ax.legend()
-        
-        canvas = FigureCanvasTkAgg(fig, master=self.bar_chart_container)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill='x')
-
-    def update_pie_chart(self):
-        """Logic for Section 2: Dynamic Pie Chart"""
-        for widget in self.pie_chart_container.winfo_children():
-            widget.destroy()
-
-        year = self.ana_pie_year_var.get()
-        month_name = self.ana_pie_month_var.get()
-        level = self.ana_pie_level_var.get()
-        sel_cat = self.ana_pie_cat_var.get()
-        sel_sub = self.ana_pie_sub_var.get()
-
-        target_month = None if month_name == "Whole Year" else datetime.strptime(month_name, '%B').month
-        
-        data = defaultdict(float)
-        
-        # Determine filtering and grouping based on level
-        for t in self.transactions:
-            try:
-                t_parts = t['date'].split('/')
-                if t_parts[2] != year: continue
-                if target_month and int(t_parts[1]) != target_month: continue
-                
-                if level == "Category":
-                    data[t['category']] += t['amount']
-                elif level == "Subcategory":
-                    if t['category'] == sel_cat:
-                        data[t['subcategory']] += t['amount']
-                elif level == "Sub-subcategory":
-                    if t['category'] == sel_cat and t['subcategory'] == sel_sub:
-                        ss = t.get('subsubcategory', 'General')
-                        data[ss] += t['amount']
-            except: continue
-
-        fig = Figure(figsize=(8, 5), dpi=100)
-        ax = fig.add_subplot(111)
-
-        if data:
-            ax.pie(data.values(), labels=data.keys(), autopct='%1.1f%%', startangle=140)
-            ax.set_title(f"{level} Breakdown ({month_name} {year})", fontweight='bold')
-        else:
-            ax.text(0.5, 0.5, "No Data Found for Selection", ha='center', va='center')
-
-        canvas = FigureCanvasTkAgg(fig, master=self.pie_chart_container)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill='x')
-        
-    def sync_analysis_subs(self, event=None):
-        """Updates the Subcategory filter based on selected Category"""
-        cat = self.analysis_cat_var.get()
-        if cat in self.subcategories:
-            subs = list(self.subcategories[cat].keys())
-            self.analysis_sub_combo['values'] = subs
-            if subs: self.analysis_sub_var.set(subs[0])
-        else:
-            self.analysis_sub_combo['values'] = []
-            self.analysis_sub_var.set("")
-
-    def on_chart_resize(self, event):
-        self.update_analysis_charts()
-        
-    def update_analysis_charts(self):
-        for widget in self.charts_frame.winfo_children():
-            widget.destroy()
-        
-        year = self.analysis_year_var.get()
-        month_val = self.analysis_month_var.get()
-        target_cat = self.analysis_cat_var.get()
-        target_sub = self.analysis_sub_var.get()
-        
-        w = self.charts_frame.winfo_width()
-        h = self.charts_frame.winfo_height()
-        if w < 100: w = 1500 
-        if h < 100: h = 1200 # Increased height for more charts
-        fig_w, fig_h = w / 50, h / 50
-        
-        fig = Figure(figsize=(fig_w, fig_h), dpi=100)
-        
-        # --- 1. Income vs Expense Bar Chart ---
-        ax1 = fig.add_subplot(4, 2, (1, 2))
-        monthly_income = defaultdict(float)
-        monthly_expense = defaultdict(float)
-        for inc in self.income_sources:
-            if inc['date'].endswith(year):
-                m = int(inc['date'].split('/')[1])
-                monthly_income[m] += inc['amount']
-        for trans in self.transactions:
-            if trans['date'].endswith(year):
-                m = int(trans['date'].split('/')[1])
-                monthly_expense[m] += trans['amount']
-        
-        x = range(1, 13)
-        width = 0.35
-        ax1.bar([i - width/2 for i in x], [monthly_income[i] for i in x], width, label='Income', color='green', alpha=0.7)
-        ax1.bar([i + width/2 for i in x], [monthly_expense[i] for i in x], width, label='Expense', color='red', alpha=0.7)
-        ax1.set_title(f'Income vs Expense - {year}', fontweight='bold')
-        ax1.set_xticks(x)
-        ax1.legend()
-
-        # --- 2. Monthly Category Pie ---
-        ax2 = fig.add_subplot(4, 2, 3)
-        m_pie_data = defaultdict(float)
-        m_filter = month_val.zfill(2) if month_val != "Whole Year" else None
-        
-        for t in self.transactions:
-            t_parts = t['date'].split('/')
-            if t_parts[2] == year:
-                if m_filter is None or t_parts[1] == m_filter:
-                    m_pie_data[t['category']] += t['amount']
-        
-        self._safe_pie(ax2, m_pie_data, f"Category Mix ({month_val}/{year})")
-
-        # --- 3. Yearly Category Pie ---
-        ax3 = fig.add_subplot(4, 2, 4)
-        y_pie_data = defaultdict(float)
-        for t in self.transactions:
-            if t['date'].endswith(year):
-                y_pie_data[t['category']] += t['amount']
-        self._safe_pie(ax3, y_pie_data, f"Yearly Category Mix ({year})")
-
-        # --- 4. BD Expenses Pie ---
-        ax4 = fig.add_subplot(4, 2, 5)
-        bd_data = defaultdict(float)
-        for t in self.bd_transactions:
-            t_parts = t['date'].split('/')
-            if t_parts[2] == year:
-                if m_filter is None or t_parts[1] == m_filter:
-                    bd_data[t['category']] += t['amount']
-        self._safe_pie(ax4, bd_data, f"BD Expenses ({month_val}/{year})")
-
-        # --- 5. NEW: Subcategory Pie (Filtered by Category) ---
-        ax5 = fig.add_subplot(4, 2, 6)
-        sub_pie_data = defaultdict(float)
-        if target_cat:
-            for t in self.transactions:
-                t_parts = t['date'].split('/')
-                if t_parts[2] == year and t['category'] == target_cat:
-                    if m_filter is None or t_parts[1] == m_filter:
-                        sub_pie_data[t['subcategory']] += t['amount']
-            self._safe_pie(ax5, sub_pie_data, f"Subcats of {target_cat}\n({month_val})")
-        else:
-            ax5.text(0.5, 0.5, "Select Category", ha='center')
-
-        # --- 6. NEW: Sub-Subcategory Pie (Filtered by Subcategory) ---
-        ax6 = fig.add_subplot(4, 2, 7)
-        ss_pie_data = defaultdict(float)
-        if target_cat and target_sub:
-            for t in self.transactions:
-                t_parts = t['date'].split('/')
-                if t_parts[2] == year and t['category'] == target_cat and t['subcategory'] == target_sub:
-                    if m_filter is None or t_parts[1] == m_filter:
-                        ss_item = t.get('subsubcategory', 'Other')
-                        ss_pie_data[ss_item] += t['amount']
-            self._safe_pie(ax6, ss_pie_data, f"Items in {target_sub}\n({month_val})")
-        else:
-            ax6.text(0.5, 0.5, "Select Subcategory", ha='center')
-
-        fig.tight_layout()
-        canvas = FigureCanvasTkAgg(fig, master=self.charts_frame)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill='both', expand=True)
-
-    def _safe_pie(self, ax, data, title):
-        """Helper to plot pie chart or 'No Data' message"""
-        if data:
-            labels = list(data.keys())
-            sizes = list(data.values())
-            ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=plt.cm.Paired.colors)
-            ax.set_title(title, fontweight='bold', fontsize=10)
-        else:
-            ax.text(0.5, 0.5, f"No Data for\n{title}", ha='center', va='center')
-            ax.set_title(title, fontweight='bold', fontsize=10)
-            
-   
-
-def main():
-    root = tk.Tk()
-    app = FinanceManager(root)
-    root.mainloop()
+        self.canvas_bot.draw()
 
 if __name__ == "__main__":
-    main()
+    root = tk.Tk()
+    app = FinanceApp(root)
+    root.mainloop()
