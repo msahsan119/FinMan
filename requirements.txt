@@ -1,7 +1,7 @@
 #streamlit
-pandas
-plotly
+#plotly
 #reportlab
-matplotlib
-tkcalendar
+#tkcalendar
+pandas
 pyinstaller
+matplotlib
