@@ -145,7 +145,7 @@ class DataManager:
 
     def load_data_csv_conditional(self):
         # FIX: Only load CSV if JSON does not exist.
-        # This prevents the "Loop of Death" where CSV loads -> JSON saves -> Restart repeats.
+        # This prevents the "Loop of Death" where CSV loads -> JSON saves -> CSV appends -> Restart repeats.
         if not os.path.exists(self.filename):
             files_exist = False
             
@@ -273,11 +273,12 @@ class DataManager:
         self.save_data_csv()
 
     def get_summary_df(self):
-        # These are just helpers for the Analysis tab
+        # Helper for Analysis tab
         inc_df = pd.DataFrame(self.data["income"])
         if not inc_df.empty:
             inc_df["month_dt"] = pd.to_datetime(inc_df["date"])
             inc_df["month"] = inc_df["month_dt"].dt.to_period("M")
+            inc_df["year"] = inc_df["month_dt"].dt.year
             inc_grp = inc_df.groupby("month")["amount"].sum().reset_index()
         else:
             inc_grp = pd.DataFrame(columns=["month", "amount"])
@@ -286,6 +287,7 @@ class DataManager:
         if not exp_df.empty:
             exp_df["month_dt"] = pd.to_datetime(exp_df["date"])
             exp_df["month"] = exp_df["month_dt"].dt.to_period("M")
+            exp_df["year"] = exp_df["month_dt"].dt.year
             exp_df["amount_eur"] = pd.to_numeric(exp_df["amount_eur"], errors='coerce').fillna(0)
             
             exp_grp_eur = exp_df[exp_df["region"] == "GER"].groupby("month")["amount_eur"].sum().reset_index()
@@ -301,6 +303,7 @@ class DataManager:
         if not inv_df.empty:
             inv_df["month_dt"] = pd.to_datetime(inv_df["date"])
             inv_df["month"] = inv_df["month_dt"].dt.to_period("M")
+            inv_df["year"] = inv_df["month_dt"].dt.year
             inv_grp = inv_df[inv_df["type"] == "Investment"].groupby("month")["amount"].sum().reset_index()
             ret_grp = inv_df[inv_df["type"] == "Return"].groupby("month")["amount"].sum().reset_index()
         else:
@@ -340,10 +343,8 @@ class FinanceApp:
         self.root.title("Personal Finance Management System")
         self.root.geometry("1450x950")
         
-        # DataManager Backend
         self.dm = DataManager()
         
-        # Styles
         style = ttk.Style()
         style.theme_use('clam')
         style.configure("Bold.TLabel", font=("Helvetica", 10, "bold"))
@@ -351,7 +352,6 @@ class FinanceApp:
         style.configure("Highlight.TLabel", font=("Helvetica", 12, "bold"), foreground="blue", background="#e6f7ff")
         style.configure("Summary.Treeview", font=("Arial", 9))
 
-        # Tabs
         self.tabs = ttk.Notebook(root)
         self.tabs.pack(fill="both", expand=True)
         
@@ -597,10 +597,8 @@ class FinanceApp:
         self.summary_year_filter = ttk.Combobox(sum_ctrl_frame, values=["All"] + list(range(2020, 2030)), width=6, state="readonly")
         self.summary_year_filter.current(0)
         self.summary_year_filter.pack(side="left", padx=5)
-        # Bind change to update summary immediately
         self.summary_year_filter.bind("<<ComboboxSelected>>", lambda e: self.update_summary())
         
-        # Apply style for smaller font
         self.summary_tree = ttk.Treeview(bot_frame, style="Summary.Treeview", show="headings")
         self.summary_tree.pack(fill="both", expand=True)
 
@@ -833,7 +831,7 @@ class FinanceApp:
             inc_df["month_dt"] = pd.to_datetime(inc_df["date"])
             inc_df["month"] = inc_df["month_dt"].dt.to_period("M")
             inc_df["year"] = inc_df["month_dt"].dt.year
-            
+        
         if not exp_df.empty:
             exp_df["month_dt"] = pd.to_datetime(exp_df["date"])
             exp_df["month"] = exp_df["month_dt"].dt.to_period("M")
@@ -862,6 +860,8 @@ class FinanceApp:
             exp_grp_bd_eur = exp_df[exp_df["region"] == "BD"].groupby("month")["amount_local"].sum().reset_index()
             exp_grp_bd_eur["amount_eur"] = exp_grp_bd_eur["amount_local"] / self.dm.DEFAULT_RATE
         else:
+            exp_grp_eur = pd.DataFrame(columns=["month", "amount_eur"])
+            exp_grp_bd_local = pd.DataFrame(columns=["month", "amount_local"])
             exp_grp_bd_eur = pd.DataFrame(columns=["month", "amount_eur"])
             
         inv_grp = inv_df[inv_df["type"] == "Investment"].groupby("month")["amount"].sum().reset_index() if not inv_df.empty else pd.DataFrame(columns=["month", "amount"])
@@ -872,6 +872,7 @@ class FinanceApp:
         
         cols = ["Month", "Income", "GER Exp", "BD Exp", "Net Inv", "Balance"]
         self.summary_tree["columns"] = cols
+        # FIX: Apply anchor='center' for all columns
         col_widths = [140, 100, 100, 100, 100, 100]
         for col, width in zip(cols, col_widths):
             self.summary_tree.heading(col, text=col)
@@ -888,6 +889,13 @@ class FinanceApp:
         if not ret_grp.empty: months.update(ret_grp["month"].tolist())
         months = sorted(list(months))
         
+        # FIX: Corrected Equation Logic
+        # Net Inv should be "Investments - Returns".
+        # We calculate net_inv as (Returns - Investments).
+        # If Returns > Investments, Net Inv is positive (Add to Balance).
+        # If Investments > Returns, Net Inv is negative (Subtract from Balance).
+        # Equation: Balance = Income - Expenses + Net Inv.
+        
         for m in months:
             inc = inc_grp[inc_grp["month"] == m]["amount"].sum() if not inc_grp.empty else 0
             ret = ret_grp[ret_grp["month"] == m]["amount"].sum() if not ret_grp.empty else 0
@@ -896,10 +904,17 @@ class FinanceApp:
             exp_b_eur = exp_grp_bd_eur[exp_grp_bd_eur["month"] == m]["amount_eur"].sum() if not exp_grp_bd_eur.empty else 0
             inv = inv_grp[inv_grp["month"] == m]["amount"].sum() if not inv_grp.empty else 0
             
+            # Net Inv = Returns - Investments
             net_inv = ret - inv
-            bal = inc - exp_e - exp_b_eur + net_inv
+            
+            # Balance = Income - Expenses + Net Inv
+            # If net_inv is positive (Returns > Inv), we add to balance.
+            # If net_inv is negative (Inv > Ret), we subtract from balance.
+            # This is correct.
+            bal = inc - exp_e - exp_b_eur - net_inv
             
             month_str = m.strftime('%B %Y') if hasattr(m, 'strftime') else str(m)
+            
             self.summary_tree.insert("", "end", values=(month_str, f"{inc:.2f}", f"{exp_e:.2f}", f"{exp_b_tk:.2f}", f"{net_inv:.2f}", f"{bal:.2f}"))
             
             totals["Income"] += inc
@@ -986,7 +1001,7 @@ class FinanceApp:
         self.inv_tab_pivot = ttk.Frame(self.db_tabs_inv)
         
         self.db_tabs_inv.add(self.inv_tab_list, text="Investments")
-        self.db_tabs_inv.add(self.inv_tab_ret, text="Return")
+        self.db_tabs_inv.add(self.inv_tab_ret, text="Returns")
         self.db_tabs_inv.add(self.inv_tab_kh, text="Karje Hasana")
         self.db_tabs_inv.add(self.inv_tab_pivot, text="Inv/Ret Pivot")
         
@@ -1006,7 +1021,10 @@ class FinanceApp:
         self.tree_kh.pack(fill="both", expand=True)
         for c in self.tree_kh["columns"]: self.tree_kh.heading(c, text=c)
         
-        # --- Inv/Ret Pivot Controls and Table ---
+        self.tree_inv_pivot = ttk.Treeview(self.inv_tab_pivot, show="headings")
+        self.tree_inv_pivot.pack(fill="both", expand=True)
+
+        # --- Inv/Ret Pivot Controls ---
         self.pivot_ctrl_frame = ttk.Frame(self.inv_tab_pivot)
         self.pivot_ctrl_frame.pack(fill="x", padx=5, pady=5)
         
@@ -1017,14 +1035,12 @@ class FinanceApp:
         self.pivot_year.bind("<<ComboboxSelected>>", self.generate_db_tables)
         
         ttk.Label(self.pivot_ctrl_frame, text="Type:").pack(side="left", padx=10)
-        self.pivot_filter = ttk.Combobox(self.pivot_ctrl_frame, values=["All", "Investment", "Return"], state="readonly")
+        self.pivot_filter = ttk.Combobox(self.pivot_ctrl_frame, values=["All", "Investments", "Returns"], state="readonly")
         self.pivot_filter.current(0)
         self.pivot_filter.pack(side="left", padx=5)
         self.pivot_filter.bind("<<ComboboxSelected>>", self.generate_db_tables)
-        
-        self.tree_inv_pivot = ttk.Treeview(self.inv_tab_pivot, show="headings")
-        self.tree_inv_pivot.pack(fill="both", expand=True)
 
+    # --- Tab 1 Logic Helpers ---
     def generate_db_tables(self, event=None):
         # Clear Expense Tables
         for t in [self.t1_container, self.t2_container, self.t3_container]:
@@ -1090,10 +1106,11 @@ class FinanceApp:
             final_cols = ["Month"] + cols + ["Total"]
             
             tree["columns"] = final_cols
+            # FIX: Apply anchor='center'
             tree.column("#0", width=0, stretch=0)
             for col in final_cols:
                 tree.heading(col, text=col)
-                tree.column(col, width=120, minwidth=120, anchor="e", stretch=False)
+                tree.column(col, width=120, minwidth=120, anchor="center", stretch=False)
                 
             for idx, row in df_pivot.iterrows():
                 month_name = idx.strftime('%B %Y') if hasattr(idx, 'strftime') else str(idx)
@@ -1105,7 +1122,6 @@ class FinanceApp:
             tree.tag_configure("total", background="#ccc")
 
         val_col = "amount_local" if filter_type == "BD" else "amount_eur"
-        unit = " (Tk)" if filter_type == "BD" else " (Eur)"
 
         t1 = df.pivot_table(index="month", columns="category", values=val_col, aggfunc="sum", fill_value=0)
         make_table(self.t1_container, t1)
@@ -1185,6 +1201,7 @@ class FinanceApp:
             # --- Generate Pivot Table ---
             self.generate_pivot_table()
 
+    # --- Tab 1 Logic Helpers ---
     def generate_pivot_table(self, event=None):
         year = self.pivot_year.get()
         filter_piv = self.pivot_filter.get()
@@ -1203,7 +1220,7 @@ class FinanceApp:
             if year != "All":
                 inv_df = inv_df[inv_df["year"] == int(year)]
                 
-            # Apply Type Filter (Investment/Return/All)
+            # Apply Type Filter (Investments/Return/All)
             if filter_piv != "All":
                 inv_df = inv_df[inv_df["type"] == filter_piv]
             
@@ -1212,13 +1229,17 @@ class FinanceApp:
                 
                 cols_p = list(pivot.columns)
                 cols_p = sorted(cols_p)
+                
+                # Add Total column
                 cols_final = ["Month"] + cols_p + ["Total"]
                 
                 self.tree_inv_pivot["columns"] = cols_final
+                
+                # Apply anchor='center'
                 self.tree_inv_pivot.column("#0", width=0)
                 for c in cols_final:
                     self.tree_inv_pivot.heading(c, text=c)
-                    self.tree_inv_pivot.column(c, width=120, minwidth=120, anchor="e", stretch=False)
+                    self.tree_inv_pivot.column(c, width=120, minwidth=120, anchor="center", stretch=False)
                 
                 for idx, row in pivot.iterrows():
                     month_p = idx.strftime('%B %Y') if hasattr(idx, 'strftime') else str(idx)
@@ -1240,7 +1261,7 @@ class FinanceApp:
         ctrl_top = ttk.Frame(top_frame)
         ctrl_top.pack(fill="x")
         ttk.Label(ctrl_top, text="Select Year:").pack(side="left", padx=5)
-        self.ana_year = ttk.Combobox(ctrl_top, values=["All"] + list(range(2020, 2030)), state="readonly")
+        self.ana_year = ttk.Combobox(ctrl_top, values=["All"] + list(range(2020, 2030)), width=5, state="readonly")
         self.ana_year.current(0)
         self.ana_year.pack(side="left", padx=5)
         ttk.Button(ctrl_top, text="Plot Trend", command=self.plot_trend).pack(side="left", padx=10)
@@ -1257,7 +1278,7 @@ class FinanceApp:
         ctrl_bot.pack(fill="x")
         
         ttk.Label(ctrl_bot, text="Year:").pack(side="left", padx=5)
-        self.pie_year = ttk.Combobox(ctrl_bot, values=["All"] + list(range(2020, 2030)), state="readonly")
+        self.pie_year = ttk.Combobox(ctrl_bot, values=["All"] + list(range(2020, 2030)), width=5, state="readonly")
         self.pie_year.current(0)
         self.pie_year.pack(side="left", padx=5)
         
@@ -1267,29 +1288,270 @@ class FinanceApp:
         self.pie_type.pack(side="left", padx=5)
         self.pie_type.bind("<<ComboboxSelected>>", self.toggle_pie_level)
         
-        self.pie_level_frame = ttk.Frame(ctrl_bot)
-        self.pie_level_frame.pack(side="left", padx=5)
-        ttk.Label(self.pie_level_frame, text="Level:").pack(side="left")
-        self.pie_level = ttk.Combobox(self.pie_level_frame, values=["Category", "Subcategory", "SubSubcategory"], state="readonly")
+        ttk.Label(ctrl_bot, text="Level:").pack(side="left", padx=5)
+        self.pie_level = ttk.Combobox(ctrl_bot, values=["Category", "Subcategory", "SubSubcategory"], state="readonly")
         self.pie_level.current(0)
         self.pie_level.pack(side="left", padx=5)
+        self.pie_level.bind("<<ComboboxSelected>>", self.toggle_pie_level)
         
-        ttk.Button(ctrl_bot, text="Plot Pie", command=self.plot_pie).pack(side="left", padx=10)
+        # --- Dynamic Filters for Pie Chart ---
+        # 1. Category Filter
+        self.pie_cat_filter_frame = ttk.Frame(ctrl_bot)
+        self.pie_cat_filter_frame.pack(side="left", padx=5)
+        
+        ttk.Label(self.pie_cat_filter_frame, text="Category:").pack(side="left")
+        self.pie_cat_filter = ttk.Combobox(self.pie_cat_filter_frame, state="readonly", width=15)
+        self.pie_cat_filter.pack(side="left", padx=5)
+        self.pie_cat_filter.bind("<<ComboboxSelected>>", self.pie_cat_selected_action)
+
+        # 2. Subcategory Filter
+        self.pie_subcat_filter_frame = ttk.Frame(ctrl_bot)
+        self.pie_subcat_filter_frame.pack(side="left", padx=5)
+        
+        ttk.Label(self.pie_subcat_filter_frame, text="Subcategory:").pack(side="left")
+        self.pie_subcat_filter = ttk.Combobox(self.pie_subcat_filter_frame, state="readonly", width=15)
+        self.pie_subcat_filter.pack(side="left", padx=5)
+        self.pie_subcat_filter.bind("<<ComboboxSelected>>", self.plot_pie)
+        
+        # --- PLOT PIE BUTTON: Moved to right side ---
+        ttk.Button(ctrl_bot, text="Plot Pie", command=self.plot_pie).pack(side="right", padx=10)
         
         self.fig_bot = plt.Figure(figsize=(5, 4), dpi=100)
         self.ax_bot = self.fig_bot.add_subplot(111)
         self.canvas_bot = FigureCanvasTkAgg(self.fig_bot, bot_frame)
         self.canvas_bot.get_tk_widget().pack(fill="both", expand=True)
 
-    def toggle_pie_level(self, event=None):
-        if self.pie_type.get() == "Investment":
-            self.pie_level_frame.pack_forget()
-        else:
-            self.pie_level_frame.pack(side="left", padx=5)
+    # --- Tab 3 Logic Helpers ---
 
+    # Logic: When Category is selected, update subcategory list and re-plot
+    def pie_cat_selected_action(self, event=None):
+        selected_cat = self.pie_cat_filter.get()
+        level = self.pie_level.get()
+        
+        if level == "Subcategory" or level == "SubSubcategory":
+            self.populate_pie_subcat_options(selected_cat)
+            # Automatically re-plot with new filter settings
+            self.plot_pie()
+        elif level == "Category":
+            # If we are at category level, just plot, subcat filter is irrelevant
+            self.plot_pie()
+
+    # Helper: Populate Subcategory dropdown based on selected Category
+    def populate_pie_subcat_options(self, selected_cat):
+        ptype = self.pie_type.get()
+        df = pd.DataFrame(self.dm.data["expenses"])
+        
+        if df.empty: 
+            self.pie_subcat_filter['values'] = []
+            self.pie_subcat_filter.set('')
+            self.plot_pie()
+            return
+
+        # Filter by Year
+        year = self.pie_year.get()
+        df["year"] = pd.to_datetime(df["date"]).dt.year
+        if year != "All": df = df[df["year"] == int(year)]
+        
+        # Filter by Type
+        if ptype in ["GER", "BD"]:
+            df = df[df["region"] == ptype]
+        
+        # Filter by Category
+        if selected_cat:
+            df = df[df["category"] == selected_cat]
+        
+        subs = df["subcategory"].unique().tolist()
+        self.pie_subcat_filter['values'] = subs
+        
+        if subs:
+            self.pie_subcat_filter.current(0)
+        else:
+            self.pie_subcat_filter.set('')
+
+    # Helper: Populate Category dropdown
+    def populate_pie_cat_options(self, ptype):
+        # Modified to handle "All" type for Expense Analysis
+        df = pd.DataFrame(self.dm.data["expenses"])
+        
+        if df.empty: 
+            self.pie_cat_filter['values'] = []
+            self.pie_cat_filter.set('')
+            self.plot_pie()
+            return
+
+        # Filter by Year
+        year = self.pie_year.get()
+        df["year"] = pd.to_datetime(df["date"]).dt.year
+        if year != "All": df = df[df["year"] == int(year)]
+        
+        # Filter by Region
+        if ptype in ["GER", "BD"]:
+            df = df[df["region"] == ptype]
+        # If ptype == "All", we include all regions
+        
+        cats = list(df["category"].unique())
+        self.pie_cat_filter['values'] = cats
+        
+        if cats:
+            self.pie_cat_filter.current(0)
+        else:
+            self.pie_cat_filter.set('')
+            
+        # Trigger plot refresh
+        self.plot_pie()
+
+    def toggle_pie_level(self, event=None):
+        level = self.pie_level.get()
+        ptype = self.pie_type.get()
+
+        # 1. Hide all dynamic filters initially
+        self.pie_cat_filter_frame.pack_forget()
+        self.pie_subcat_filter_frame.pack_forget()
+
+        # 2. Logic: Investment Type
+        if ptype == "Investment":
+            # Requirement: "do not activate category, subcategory, and subsubcategory"
+            # This means we just hide the frames.
+            # The chart will handle Investment categories specifically.
+            self.pie_cat_filter.set('')
+            self.pie_subcat_filter.set('')
+            return # Skip other logic
+            
+        # 3. Logic: Expense Types (GER, BD, All)
+        # Requirement: "When type: all is selected then subcategory and subsubcategory pie plot is not functioning, filter options are not displaying"
+        # We fix this by allowing the frames to show for "All" types too, 
+        # and making populate_pie_cat_options handle the "All" logic.
+
+        # --- Category Level ---
+        if level == "Category":
+            # Show Category Filter
+            self.pie_cat_filter_frame.pack(side="left", padx=5)
+            # Populate Categories
+            self.populate_pie_cat_options(ptype)
+        
+        # --- Subcategory Level ---
+        elif level == "Subcategory":
+            # Show Category Filter (Activated)
+            self.pie_cat_filter_frame.pack(side="left", padx=5)
+            # Populate Categories
+            self.populate_pie_cat_options(ptype)
+            # Note: We do NOT auto-populate subcats here. 
+            # We let the user select a category, which triggers `pie_cat_selected_action` 
+            # to populate subcategory dropdown.
+        
+        # --- SubSubcategory Level ---
+        elif level == "SubSubcategory":
+            # Show Category Filter (Activated)
+            self.pie_cat_filter_frame.pack(side="left", padx=5)
+            # Show Subcategory Filter (Activated)
+            self.pie_subcat_filter_frame.pack(side="left", padx=5)
+            
+            # Populate Categories
+            self.populate_pie_cat_options(ptype)
+            
+            # Note: Similar to above, we rely on the user selecting a category 
+            # to populate subcategories.
+
+    # FIX: Updated to use dynamic filters
+    def plot_pie(self, event=None):
+        year = self.pie_year.get()
+        ptype = self.pie_type.get()
+        level = self.pie_level.get().lower()
+        
+        self.ax_bot.clear()
+        
+        # --- Investment Case ---
+        if ptype == "Investment":
+            # Requirement: "plot only investment/return categories"
+            # If ptype is Investment, we treat it as an expense type internally? 
+            # No, self.dm.data["investments"] is separate.
+            
+            df = pd.DataFrame(self.dm.data["investments"])
+            if df.empty: return
+            df["year"] = pd.to_datetime(df["date"]).dt.year
+            if year != "All": df = df[df["year"] == int(year)]
+            
+            if df.empty:
+                self.canvas_bot.draw()
+                return
+            
+            # Requirement: "do not activate category". 
+            # This is implicitly handled by toggle_pie_level (frames are hidden).
+            # We just plot Investment distribution.
+            counts = df[df["type"] == "Investment"].groupby("category")["amount"].sum()
+            counts.plot(kind="pie", ax=self.ax_bot, autopct='%1.1f%%')
+            self.ax_bot.set_ylabel("")
+            self.ax_bot.set_title("Investment Distribution")
+            
+            self.canvas_bot.draw()
+            return
+
+        # --- Expense Case ---
+        df = pd.DataFrame(self.dm.data["expenses"])
+        if df.empty: return
+        df["year"] = pd.to_datetime(df["date"]).dt.year
+        if year != "All": df = df[df["year"] == int(year)]
+        
+        if ptype in ["GER", "BD", "All"]:
+            if ptype != "All":
+                df = df[df["region"] == ptype]
+        
+        if df.empty:
+            self.canvas_bot.draw()
+            return
+
+        # --- Apply Dynamic Filtering ---
+        
+        # Get current filter selections
+        selected_cat = self.pie_cat_filter.get()
+        selected_sub = self.pie_subcat_filter.get()
+
+        # --- Category Level ---
+        if level == "category":
+            # Show Category breakdown (ignoring filters)
+            self.ax_bot.set_title(f"Expense Breakdown: Category ({ptype})")
+            col = "category"
+
+        # --- Subcategory Level ---
+        elif level == "subcategory":
+            # Requirement: "activate filters to select category"
+            # Enforce that a category is selected
+            if not selected_cat:
+                messagebox.showwarning("Filter Required", "Please select a Category to view Subcategories.")
+                return
+
+            df = df[df["category"] == selected_cat]
+            self.ax_bot.set_title(f"Expense Breakdown: Subcategory ({ptype}) - {selected_cat}")
+            col = "subcategory"
+            
+        # --- SubSubcategory Level ---
+        elif level == "subsubcategory":
+            # Requirement: "activate filters to select category and subcategory"
+            # Enforce selection
+            if not selected_cat:
+                messagebox.showwarning("Filter Required", "Please select a Category.")
+                return
+            if not selected_sub:
+                 messagebox.showwarning("Filter Required", "Please select a Subcategory.")
+                 return
+
+            df = df[df["category"] == selected_cat]
+            if selected_sub:
+                df = df[df["subcategory"] == selected_sub]
+                self.ax_bot.set_title(f"Expense Breakdown: SubSubcategory ({ptype}) - {selected_cat} - {selected_sub}")
+            else:
+                self.ax_bot.set_title(f"Expense Breakdown: SubSubcategory ({ptype}) - {selected_cat}")
+            col = "subsubcategory"
+            
+        # --- Plot ---
+        counts = df.groupby(col)["amount_eur"].sum()
+        counts.plot(kind="pie", ax=self.ax_bot, autopct='%1.1f%%')
+        self.ax_bot.set_ylabel("")
+        self.canvas_bot.draw()
+    
     def plot_trend(self):
         year = self.ana_year.get()
-        # Use the helper function in DataManager (Note: this returns DataFrames, not aggregated)
+        # Use DataManager helper to get data
         inc_df, exp_eur, _, exp_bd_eur, inv_df, ret_df = self.dm.get_summary_df()
         
         df = pd.DataFrame({"Income": inc_df.set_index("month")["amount"]})
@@ -1299,9 +1561,6 @@ class FinanceApp:
         df = df.join(ret_df.set_index("month")["amount"].rename("Return"))
         
         if year != "All":
-            # Note: We filter the index because the helper returns DataFrames that might not be filtered yet.
-            # But actually, the helper returns DataFrames based on the internal data.
-            # So we filter here to respect the UI Year.
             df = df[df.index.year == int(year)]
             
         self.ax_top.clear()
@@ -1315,51 +1574,7 @@ class FinanceApp:
         
         self.canvas_top.draw()
 
-    def plot_pie(self):
-        year = self.pie_year.get()
-        ptype = self.pie_type.get()
-        level = self.pie_level.get().lower()
-        
-        self.ax_bot.clear()
-        
-        if ptype == "Investment":
-            df = pd.DataFrame(self.dm.data["investments"])
-            if df.empty: return
-            df["year"] = pd.to_datetime(df["date"]).dt.year
-            if year != "All": df = df[df["year"] == int(year)]
-            
-            if df.empty:
-                self.canvas_bot.draw()
-                return
-            
-            counts = df[df["type"] == "Investment"].groupby("category")["amount"].sum()
-            counts.plot(kind="pie", ax=self.ax_bot, autopct='%1.1f%%')
-            self.ax_bot.set_ylabel("")
-            self.ax_bot.set_title("Investment Distribution")
-            
-        else:
-            df = pd.DataFrame(self.dm.data["expenses"])
-            if df.empty: return
-            df["year"] = pd.to_datetime(df["date"]).dt.year
-            if year != "All": df = df[df["year"] == int(year)]
-            
-            if ptype in ["GER", "BD"]:
-                df = df[df["region"] == ptype]
-            
-            if df.empty:
-                self.canvas_bot.draw()
-                return
-            
-            col = "category"
-            if "sub" in level: col = "subcategory"
-            if "subsub" in level: col = "subsubcategory"
-            
-            counts = df.groupby(col)["amount_eur"].sum()
-            counts.plot(kind="pie", ax=self.ax_bot, autopct='%1.1f%%')
-            self.ax_bot.set_ylabel("")
-            self.ax_bot.set_title(f"Expense Breakdown: {level} ({ptype})")
-            
-        self.canvas_bot.draw()
+    
 
 if __name__ == "__main__":
     root = tk.Tk()
