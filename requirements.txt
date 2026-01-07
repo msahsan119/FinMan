@@ -1,8 +1,7 @@
-streamlit
+#streamlit
 pandas
 plotly
-reportlab
+#reportlab
 matplotlib
 tkcalendar
-babel
 pyinstaller
