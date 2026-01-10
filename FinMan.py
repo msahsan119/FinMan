@@ -13,11 +13,12 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 
 class DataManager:
+
+        # ==========================================
+    # UPDATED Data Manager Methods (Flat File Structure)
+    # ==========================================
+
     def __init__(self):
-        self.filename = "finance.json"
-        # CSV File saved in the same folder as script
-        self.csv_filename = "finance.csv"
-        # Default rate 100
         self.DEFAULT_RATE = 140.0
         
         self.defaults = {
@@ -34,53 +35,257 @@ class DataManager:
             "conversion_rates": {}
         }
         
+        # Start with defaults
         self.data = self.defaults.copy()
-        # Load data order: 1. Load JSON (Primary), 2. Load CSV (Conditional to prevent loop)
+        
+        # Load existing data from current directory
         self.load_data()
-        self.load_data_csv_conditional() 
+    
+    def migrate_old_file(self, filepath):
+        try:
+            if not os.path.exists(filepath):
+                return False, "File not found."
+    
+            extension = os.path.splitext(filepath)[1].lower()
+            count = 0
+    
+            if extension == ".json":
+                with open(filepath, 'r') as f:
+                    old_data = json.load(f)
+    
+                # Merge Income
+                old_income = old_data.get("income", [])
+                self.data["income"].extend(old_income)
+                count += len(old_income)
+    
+                # Merge Expenses
+                old_expenses = old_data.get("expenses", [])
+                self.data["expenses"].extend(old_expenses)
+                count += len(old_expenses)
+    
+                # Merge Investments
+                old_investments = old_data.get("investments", [])
+                self.data["investments"].extend(old_investments)
+                count += len(old_investments)
+    
+                # Merge Categories (Update existing structure)
+                if "categories" in old_data:
+                    for region in old_data["categories"]:
+                        if region not in self.data["categories"]:
+                            self.data["categories"][region] = {}
+                        self.data["categories"][region].update(old_data["categories"][region])
+                
+                # Update Initial Balance if present
+                if "initial_balance_eur" in old_data:
+                    self.data["initial_balance_eur"] = old_data["initial_balance_eur"]
+                
+                # --- ADD THIS: Update Current Balances ---
+                if "current_balance_bd" in old_data:
+                    self.data["current_balance_bd"] = old_data["current_balance_bd"]
+                if "current_balance_eur" in old_data:
+                    self.data["current_balance_eur"] = old_data["current_balance_eur"]
+                # ---------------------------------------
+    
+            elif extension == ".csv":
+                df = pd.read_csv(filepath)
+    
+                # Process Expenses
+                exp_df = df[df["Record Type"] == "Expense"]
+                for _, row in exp_df.iterrows():
+                    self.data["expenses"].append({
+                        "region": row["Region"],
+                        "category": row["Category"],
+                        "subcategory": row["Subcategory"],
+                        "subsubcategory": row["Sub Subcategory"],
+                        "amount_local": row["Amount Local"],
+                        "rate": row["Rate"],
+                        "amount_eur": row["Amount EUR"],
+                        "date": row["Date"]
+                    })
+                count += len(exp_df)
+    
+                # Process Income
+                inc_df = df[df["Record Type"] == "Income"]
+                for _, row in inc_df.iterrows():
+                    self.data["income"].append({
+                        "source": row["Source"],
+                        "amount": row["Amount EUR"],
+                        "date": row["Date"],
+                        "type": "EUR"
+                    })
+                count += len(inc_df)
+    
+                # Process Investments
+                inv_df = df[df["Record Type"] == "Investment"]
+                for _, row in inv_df.iterrows():
+                    self.data["investments"].append({
+                        "type": row["Type"],
+                        "category": row["Category"],
+                        "amount": row["Amount EUR"],
+                        "date": row["Date"],
+                        "description": row["Description"],
+                        "name": row["Name"] if pd.notnull(row["Name"]) else "",
+                        "address": row["Address"] if pd.notnull(row["Address"]) else ""
+                    })
+                count += len(inv_df)
+    
+            # After merging data into memory, call save_data() to split by year
+            self.save_data()
+            return True, f"Successfully migrated {count} records. Data split by year and saved."
+    
+        except Exception as e:
+            print(f"Migration error: {e}")
+            return False, f"Error during migration: {e}"
+    
+   
+    
+    def import_old_data_action(self):
+        # Ask user to select the file
+        file_path = filedialog.askopenfilename(
+            title="Select old finance data file",
+            filetypes=[("Data Files", "*.json *.csv"), ("JSON Files", "*.json"), ("CSV Files", "*.csv"), ("All Files", "*.*")]
+        )
+        
+        if file_path:
+            confirm = messagebox.askyesno("Confirm", "This will merge data from the old file into your current data and re-save it by year. Continue?")
+            if confirm:
+                success, msg = self.dm.migrate_old_file(file_path)
+                if success:
+                    messagebox.showinfo("Success", msg)
+                    # Refresh the UI to show new data
+                    self.update_summary()
+                    self.refresh_all_tabs()
+                else:
+                    messagebox.showerror("Error", msg)
+    
+    def load_data(self):
+        """Loads data from finance_data_YEAR.json or legacy files like finance_data_all.json"""
+        # Reset to defaults
+        self.data = self.defaults.copy()
+        
+        # Find files matching the pattern finance_data*.json
+        files = []
+        for f in os.listdir('.'):
+            if f.startswith("finance_data") and f.endswith(".json"):
+                files.append(f)
+        
+        # Sort files so we load chronologically
+        files.sort()
+        
+        loaded_years = []
+    
+        for filename in files:
+            try:
+                # Attempt to parse the year from the filename
+                if "_" in filename:
+                    parts = filename.split('_')
+                    last_part = parts[-1].replace('.json', '')
+                    
+                    if last_part.isdigit():
+                        loaded_years.append(int(last_part))
+                
+                # Load the JSON content
+                with open(filename, 'r') as f:
+                    loaded_year_data = json.load(f)
+    
+                # Merge Categories
+                if "categories" in loaded_year_data:
+                    for region in loaded_year_data["categories"]:
+                        if region not in self.data["categories"]:
+                            self.data["categories"][region] = {}
+                        self.data["categories"][region].update(loaded_year_data["categories"][region])
+    
+                # Extend Lists
+                if "income" in loaded_year_data:
+                    self.data["income"].extend(loaded_year_data["income"])
+                if "expenses" in loaded_year_data:
+                    self.data["expenses"].extend(loaded_year_data["expenses"])
+                if "investments" in loaded_year_data:
+                    self.data["investments"].extend(loaded_year_data["investments"])
+                
+                # --- Load Balances ---
+                # We overwrite these. Since files are sorted, the last file (latest year)
+                # will contain the most up-to-date balance.
+                if "initial_balance_eur" in loaded_year_data:
+                    self.data["initial_balance_eur"] = loaded_year_data["initial_balance_eur"]
+                
+                if "current_balance_bd" in loaded_year_data:
+                    self.data["current_balance_bd"] = loaded_year_data["current_balance_bd"]
+                
+                if "current_balance_eur" in loaded_year_data:
+                    self.data["current_balance_eur"] = loaded_year_data["current_balance_eur"]
+                
+            except Exception as e:
+                print(f"Skipping file {filename} due to error: {e}")
+   
 
     def save_data(self):
-        try:
-            with open(self.filename, 'w') as f:
-                json.dump(self.data, f, indent=4, default=str)
-        except Exception as e:
-            print(f"Error saving JSON data: {e}")
-
-    def load_data(self):
-        if os.path.exists(self.filename):
+        """Saves data to finance_data_YEAR.json and finance_data_YEAR.csv in current directory"""
+        # 1. Determine which years have data
+        years = set()
+        
+        # Helper to extract year safely
+        def get_year(date_str):
             try:
-                with open(self.filename, 'r') as f:
-                    loaded_data = json.load(f)
-                
-                if not isinstance(loaded_data, dict):
-                    self.data = self.defaults
-                    return
+                return datetime.strptime(date_str, "%Y-%m-%d").year
+            except:
+                return None
 
-                for key, value in self.defaults.items():
-                    if key not in loaded_data:
-                        loaded_data[key] = value
-                
-                if not isinstance(loaded_data.get("categories", {}), dict):
-                    loaded_data["categories"] = self.defaults["categories"]
-                
-                for region in ["GER", "BD"]:
-                    if region not in loaded_data["categories"]:
-                        loaded_data["categories"][region] = {}
+        for item in self.data["income"]:
+            y = get_year(item["date"])
+            if y: years.add(y)
+            
+        for item in self.data["expenses"]:
+            y = get_year(item["date"])
+            if y: years.add(y)
+            
+        for item in self.data["investments"]:
+            y = get_year(item["date"])
+            if y: years.add(y)
+            
+        # If no transactions exist yet, default to current year
+        if not years:
+            years.add(datetime.now().year)
 
-                self.data = loaded_data
+        # 2. Loop through years and save
+        for year in years:
+            # Construct filenames: finance_data_2024.json
+            json_filename = f"finance_data_{year}.json"
+            csv_filename = f"finance_data_{year}.csv"
+
+            # --- Filter Data for this Year ---
+            year_income = [i for i in self.data["income"] if get_year(i["date"]) == year]
+            year_expenses = [e for e in self.data["expenses"] if get_year(e["date"]) == year]
+            year_investments = [inv for inv in self.data["investments"] if get_year(inv["date"]) == year]
+
+            # --- Prepare JSON Content ---
+            year_json_content = {
+                "initial_balance_eur": self.data["initial_balance_eur"],
+                "current_balance_bd": self.data["current_balance_bd"], # Save BD Balance
+                "current_balance_eur": self.data["current_balance_eur"], # Save EUR Balance
+                "categories": self.data["categories"], 
+                "income": year_income,
+                "expenses": year_expenses,
+                "investments": year_investments,
+                "conversion_rates": self.data.get("conversion_rates", {})
+            }
+
+            # --- Save JSON ---
+            try:
+                with open(json_filename, 'w') as f:
+                    json.dump(year_json_content, f, indent=4, default=str)
             except Exception as e:
-                print(f"Error loading JSON, using defaults: {e}")
-                self.data = self.defaults
-        else:
-            self.data = self.defaults
+                print(f"Error saving JSON for year {year}: {e}")
 
-    # --- CSV Load / Save Functions ---
-    def save_data_csv(self):
-        # Save everything to ONE file: finance_data.csv
+            # --- Save CSV ---
+            self._save_csv_content(csv_filename, year_income, year_expenses, year_investments)
+
+    # Keep the helper method from the previous step
+    def _save_csv_content(self, filepath, income_list, expense_list, investment_list):
         rows = []
         
         # 1. Process Income
-        for item in self.data["income"]:
+        for item in income_list:
             rows.append({
                 "Record Type": "Income",
                 "Date": item["date"],
@@ -99,7 +304,7 @@ class DataManager:
             })
             
         # 2. Process Expenses
-        for item in self.data["expenses"]:
+        for item in expense_list:
             rows.append({
                 "Record Type": "Expense",
                 "Date": item["date"],
@@ -118,7 +323,7 @@ class DataManager:
             })
             
         # 3. Process Investments
-        for item in self.data["investments"]:
+        for item in investment_list:
             rows.append({
                 "Record Type": "Investment",
                 "Date": item["date"],
@@ -130,7 +335,7 @@ class DataManager:
                 "Amount EUR": item["amount"],
                 "Rate": 1.0,
                 "Source": "",
-                "Type": item["type"], # Investment vs Return
+                "Type": item["type"], 
                 "Description": item["description"],
                 "Name": item["name"] if "name" in item else "",
                 "Address": item["address"] if "address" in item else ""
@@ -139,10 +344,14 @@ class DataManager:
         df = pd.DataFrame(rows)
         
         try:
-            # Overwrite mode ('w') ensures we don't keep adding duplicates on repeated saves
-            df.to_csv(self.csv_filename, mode='w', index=False)
+            df.to_csv(filepath, mode='w', index=False)
         except Exception as e:
             print(f"Error saving CSV: {e}")
+            
+    
+        
+    
+
 
     def load_data_csv_conditional(self):
         # FIX: Only load CSV if JSON does not exist.
@@ -200,32 +409,29 @@ class DataManager:
             
             if files_exist:
                 self.save_data()
-
-    def get_categories(self, region):
-        return self.data["categories"].get(region, {})
-
+    
+    def set_initial_balance(self, amount_eur):
+        self.data["initial_balance_eur"] = float(amount_eur)
+        self.save_data() 
+        # Removed self.save_data_csv()
+    
     def update_category_structure(self, region, new_structure):
         self.data["categories"][region] = new_structure
         self.save_data()
-        self.save_data_csv()
-
-    def set_initial_balance(self, amount_eur):
-        self.data["initial_balance_eur"] = float(amount_eur)
-        self.save_data()
-        self.save_data_csv()
-
+        # Removed self.save_data_csv()
+    
     def add_income(self, source, amount, date, type="EUR"):
         entry = {"source": source, "amount": float(amount), "date": date, "type": type}
         self.data["income"].append(entry)
         self.data["current_balance_eur"] += float(amount)
         self.save_data()
-        self.save_data_csv()
-
+        # Removed self.save_data_csv()
+    
     def add_bd_deposit(self, amount_tk):
         self.data["current_balance_bd"] += amount_tk
         self.save_data()
-        self.save_data_csv()
-
+        # Removed self.save_data_csv()
+    
     def add_expense(self, region, cat, sub, subsub, amount_local, rate, date):
         amount_local = float(amount_local)
         
@@ -256,8 +462,8 @@ class DataManager:
         else:
             self.data["current_balance_eur"] -= amount_local
         self.save_data()
-        self.save_data_csv()
-
+        # Removed self.save_data_csv()
+    
     def add_investment(self, inv_type, category, amount, date, description, name=None, address=None):
         entry = {
             "type": inv_type, 
@@ -271,7 +477,12 @@ class DataManager:
         self.data["investments"].append(entry)
         self.data["current_balance_eur"] -= float(amount)
         self.save_data()
-        self.save_data_csv()
+        # Removed self.save_data_csv()
+    
+    def get_categories(self, region):
+        return self.data["categories"].get(region, {})
+
+   
 
     def get_summary_df(self):
         # Helper for Analysis tab
@@ -413,6 +624,7 @@ class FinanceApp:
     # ==========================================
     # TAB 1: INPUT
     # ==========================================
+ 
     def setup_tab1(self):
         # --- Top Section ---
         top_frame = ttk.LabelFrame(self.tab1, text="Welcome")
@@ -434,6 +646,11 @@ class FinanceApp:
         self.clock_label.pack(anchor="w")
         self.date_label = ttk.Label(lbl_frame, font=("Arial", 12))
         self.date_label.pack(anchor="w")
+        
+        # --- ADD BUTTON HERE ---
+        ttk.Button(lbl_frame, text="Import Old Data (JSON/CSV)", command=self.import_old_data_action).pack(anchor="w", pady=(0, 5))
+    
+        ttk.Separator(lbl_frame, orient="horizontal").pack(fill="x", pady=5)
 
         # Highlighted Balances
         ttk.Separator(lbl_frame, orient="horizontal").pack(fill="x", pady=5)
@@ -640,6 +857,25 @@ class FinanceApp:
         self.dm.add_income(source, amt, date)
         self.update_summary()
         self.refresh_all_tabs()
+    
+    def import_old_data_action(self):
+        # Ask user to select the file
+        file_path = filedialog.askopenfilename(
+            title="Select old finance data file",
+            filetypes=[("Data Files", "*.json *.csv"), ("JSON Files", "*.json"), ("CSV Files", "*.csv"), ("All Files", "*.*")]
+        )
+        
+        if file_path:
+            confirm = messagebox.askyesno("Confirm", "This will merge data from the old file into your current data and re-save it by year. Continue?")
+            if confirm:
+                success, msg = self.dm.migrate_old_file(file_path)
+                if success:
+                    messagebox.showinfo("Success", msg)
+                    # Refresh the UI to show new data
+                    self.update_summary()
+                    self.refresh_all_tabs()
+                else:
+                    messagebox.showerror("Error", msg)
 
     def open_category_manager(self):
         win = tk.Toplevel(self.root)
