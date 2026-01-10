@@ -11,11 +11,12 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 # Data Manager & Backend Logic
 # ==========================================
 
+
 class DataManager:
     def __init__(self):
-        self.filename = "finance_data.json"
+        self.filename = "finance.json"
         # CSV File saved in the same folder as script
-        self.csv_filename = "finance_data.csv"
+        self.csv_filename = "finance.csv"
         # Default rate 100
         self.DEFAULT_RATE = 140.0
         
@@ -337,39 +338,44 @@ class DataManager:
 # GUI Application
 # ==========================================
 
+
 class FinanceApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Personal Finance Management System")
         self.root.geometry("1450x950")
         
-        self.dm = DataManager()
+        # --- CHANGE THE LINE BELOW ---
+        self.dm = DataManager() 
         
         style = ttk.Style()
-        style.theme_use('clam')
-        style.configure("Bold.TLabel", font=("Helvetica", 10, "bold"))
-        style.configure("Header.TLabel", font=("Helvetica", 12, "bold"))
-        style.configure("Highlight.TLabel", font=("Helvetica", 12, "bold"), foreground="blue", background="#e6f7ff")
-        style.configure("Summary.Treeview", font=("Arial", 9))
 
+        style.theme_use('clam')
+        # ... (existing style configs) ...
+    
         self.tabs = ttk.Notebook(root)
         self.tabs.pack(fill="both", expand=True)
         
         self.tab1 = ttk.Frame(self.tabs)
         self.tab2 = ttk.Frame(self.tabs)
         self.tab3 = ttk.Frame(self.tabs)
-        
+        self.tab4 = ttk.Frame(self.tabs) # <--- NEW
+    
         self.tabs.add(self.tab1, text="Input")
+        self.tabs.add(self.tab4, text="Daily Trans") # <--- NEW
         self.tabs.add(self.tab2, text="Database")
         self.tabs.add(self.tab3, text="Analysis")
+        
         
         # Bind tab change
         self.tabs.bind("<<NotebookTabChanged>>", self.on_tab_change)
         
         # Setup UI
         self.setup_tab1()
+        self.setup_tab4() # <--- NEW
         self.setup_tab2()
         self.setup_tab3()
+        
         self.update_clock()
         # Initial summary population
         self.update_summary()
@@ -382,6 +388,8 @@ class FinanceApp:
         elif selected_tab == 2:
             self.plot_trend()
             self.plot_pie()
+        elif selected_tab == 3: # <--- NEW (Index 3 is the 4th tab)
+            self.update_daily_trans_view()
 
     def refresh_all_tabs(self):
         """Helper to refresh Summary, Database, and Analysis tabs"""
@@ -1574,7 +1582,383 @@ class FinanceApp:
         
         self.canvas_top.draw()
 
+    # ==========================================
+    # TAB 4: DAILY TRANS
+    # ==========================================
+    def setup_tab4(self):
+        # --- Global Filters (Top of Tab 4) ---
+        filter_frame = ttk.LabelFrame(self.tab4, text="Global Filters")
+        filter_frame.pack(fill="x", padx=10, pady=5)
+        
+        ttk.Label(filter_frame, text="Region:").pack(side="left", padx=5)
+        self.dt_region = ttk.Combobox(filter_frame, values=["All", "GER", "BD"], state="readonly", width=5)
+        self.dt_region.current(0)
+        self.dt_region.pack(side="left", padx=5)
+        self.dt_region.bind("<<ComboboxSelected>>", self.update_daily_trans_view)
+
+        ttk.Label(filter_frame, text="Year:").pack(side="left", padx=10)
+        self.dt_year = ttk.Combobox(filter_frame, values=list(range(2020, 2030)), state="readonly", width=5)
+        self.dt_year.current(datetime.now().year - 2020) # Select current year
+        self.dt_year.pack(side="left", padx=5)
+        self.dt_year.bind("<<ComboboxSelected>>", self.update_daily_trans_view)
+
+        ttk.Label(filter_frame, text="Month:").pack(side="left", padx=10)
+        months = ["January", "February", "March", "April", "May", "June", 
+                  "July", "August", "September", "October", "November", "December"]
+        self.dt_month = ttk.Combobox(filter_frame, values=months, state="readonly", width=10)
+        self.dt_month.current(datetime.now().month - 1)
+        self.dt_month.pack(side="left", padx=5)
+        self.dt_month.bind("<<ComboboxSelected>>", self.update_daily_trans_view)
+
+        ttk.Button(filter_frame, text="Refresh View", command=self.update_daily_trans_view).pack(side="left", padx=20)
+
+        # --- Middle Section: NoteBook for Tables ---
+        mid_frame = ttk.LabelFrame(self.tab4, text="Daily Breakdown Tables")
+        mid_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+        self.daily_nb = ttk.Notebook(mid_frame)
+        self.daily_nb.pack(fill="both", expand=True)
+
+        # Tab 4.1: Category Table
+        self.dt_tab1 = ttk.Frame(self.daily_nb)
+        self.daily_nb.add(self.dt_tab1, text="By Category")
+        self.dt_tree1_container = ttk.Frame(self.dt_tab1)
+        self.dt_tree1_container.pack(fill="both", expand=True)
+
+        # Tab 4.2: Subcategory Table
+        self.dt_tab2 = ttk.Frame(self.daily_nb)
+        self.daily_nb.add(self.dt_tab2, text="By Subcategory")
+        
+        t2_ctrl = ttk.Frame(self.dt_tab2)
+        t2_ctrl.pack(fill="x", padx=5, pady=5)
+        ttk.Label(t2_ctrl, text="Select Category:").pack(side="left")
+        self.dt_t2_cat = ttk.Combobox(t2_ctrl, state="readonly", width=15)
+        self.dt_t2_cat.pack(side="left", padx=5)
+        self.dt_t2_cat.bind("<<ComboboxSelected>>", lambda e: self.refresh_dt_tables(2))
+        
+        self.dt_tree2_container = ttk.Frame(self.dt_tab2)
+        self.dt_tree2_container.pack(fill="both", expand=True)
+
+        # Tab 4.3: Subsubcategory Table
+        self.dt_tab3 = ttk.Frame(self.daily_nb)
+        self.daily_nb.add(self.dt_tab3, text="By Sub-Subcat")
+        
+        t3_ctrl = ttk.Frame(self.dt_tab3)
+        t3_ctrl.pack(fill="x", padx=5, pady=5)
+        ttk.Label(t3_ctrl, text="Category:").pack(side="left")
+        self.dt_t3_cat = ttk.Combobox(t3_ctrl, state="readonly", width=12)
+        self.dt_t3_cat.pack(side="left", padx=5)
+        self.dt_t3_cat.bind("<<ComboboxSelected>>", self.on_dt_t3_cat_change)
+
+        ttk.Label(t3_ctrl, text="Subcategory:").pack(side="left", padx=(10, 0))
+        self.dt_t3_sub = ttk.Combobox(t3_ctrl, state="readonly", width=12)
+        self.dt_t3_sub.pack(side="left", padx=5)
+        self.dt_t3_sub.bind("<<ComboboxSelected>>", lambda e: self.refresh_dt_tables(3))
+
+        self.dt_tree3_container = ttk.Frame(self.dt_tab3)
+        self.dt_tree3_container.pack(fill="both", expand=True)
+
+        # Bind tab switch inside daily notebook to update dropdowns if needed
+        self.daily_nb.bind("<<NotebookTabChanged>>", self.on_dt_subtab_change)
+
+        # --- Bottom Section: Plot ---
+        bot_frame = ttk.LabelFrame(self.tab4, text="Monthly Trend Analysis")
+        bot_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        self.fig_dt = plt.Figure(figsize=(5, 3), dpi=100)
+        self.ax_dt = self.fig_dt.add_subplot(111)
+        self.canvas_dt = FigureCanvasTkAgg(self.fig_dt, bot_frame)
+        self.canvas_dt.get_tk_widget().pack(fill="both", expand=True)
+
+    # --- Logic Helpers for Daily Trans ---
+
+
+
+    def on_dt_t3_cat_change(self, event):
+        # Update subcategory dropdown when category changes in Tab 3
+        cat = self.dt_t3_cat.get()
+        if not cat: return
+        
+        # Get available subcategories based on current data context (region/year/month)
+        # We use a helper to get filtered DF
+        df = self.get_filtered_daily_df()
+        if not df.empty:
+            subs = df[df['category'] == cat]['subcategory'].unique().tolist()
+            self.dt_t3_sub['values'] = subs
+            if subs: self.dt_t3_sub.current(0)
+            else: self.dt_t3_sub.set('')
+        
+        self.refresh_dt_tables(3)
+
+    def get_filtered_daily_df(self):
+        """Helper to get DF based on Global Filters (Region, Year, Month)"""
+        df = pd.DataFrame(self.dm.data["expenses"])
+        if df.empty: return df
+
+        df['date'] = pd.to_datetime(df['date'])
+        df['year'] = df['date'].dt.year
+        df['month'] = df['date'].dt.month
+        df['day'] = df['date'].dt.day
+
+        region = self.dt_region.get()
+        year = int(self.dt_year.get())
+        month = self.dt_month.current() + 1 # Combobox is 0-indexed
+
+        if region != "All":
+            df = df[df['region'] == region]
+        
+        df = df[df['year'] == year]
+        df = df[df['month'] == month]
+
+        return df
+    #----
+        # --- Updated Logic Helpers for Daily Trans ---
     
+    def update_daily_trans_view(self, event=None):
+        # 1. Get Filtered Data based on Global Filters
+        df = self.get_filtered_daily_df()
+        
+        # 2. Update Dropdown options (Categories) for Tab 2 & 3
+        cats = []
+        if not df.empty:
+            cats = sorted(df['category'].unique().tolist())
+        
+        # Preserve current selections if they are still valid
+        old_t2 = self.dt_t2_cat.get()
+        old_t3 = self.dt_t3_cat.get()
+        
+        self.dt_t2_cat['values'] = cats
+        self.dt_t3_cat['values'] = cats
+        
+        # Restore selection
+        if cats:
+            if old_t2 in cats: self.dt_t2_cat.set(old_t2)
+            else: self.dt_t2_cat.current(0)
+            
+            if old_t3 in cats: self.dt_t3_cat.set(old_t3)
+            else: self.dt_t3_cat.current(0)
+        else:
+            self.dt_t2_cat.set('')
+            self.dt_t3_cat.set('')
+    
+        # 3. Trigger subcategory update for Tab 3
+        self.on_dt_t3_cat_change(None)
+    
+        # 4. Refresh visible table
+        idx = self.daily_nb.index(self.daily_nb.select())
+        self.refresh_dt_tables(idx)
+    
+        # 5. Plot Bottom Graph
+        self.plot_daily_total(df)
+    
+    def refresh_dt_tables(self, tab_index):
+        # 1. Get the Year and Month from the global filters
+        selected_year = self.dt_year.get()
+        selected_month = self.dt_month.get()
+    
+        # 2. Get the filtered data
+        df = self.get_filtered_daily_df()
+        
+        # Helper to clear container
+        def clear_container(container):
+            for widget in container.winfo_children():
+                widget.destroy()
+    
+        # Tab 1: Category (Index 0)
+        if tab_index == 0:
+            clear_container(self.dt_tree1_container)
+            if not df.empty:
+                pivot = df.pivot_table(index='day', columns='category', values='amount_eur', aggfunc='sum', fill_value=0)
+                # PASS YEAR AND MONTH HERE
+                self.make_daily_table(self.dt_tree1_container, pivot, "Category Breakdown", selected_year, selected_month)
+            else:
+                ttk.Label(self.dt_tree1_container, text="No data for selected filters").pack(pady=20)
+    
+        # Tab 2: Subcategory (Index 1)
+        elif tab_index == 1:
+            clear_container(self.dt_tree2_container)
+            cat = self.dt_t2_cat.get()
+            if cat and not df.empty:
+                sub_df = df[df['category'] == cat]
+                if not sub_df.empty:
+                    pivot = sub_df.pivot_table(index='day', columns='subcategory', values='amount_eur', aggfunc='sum', fill_value=0)
+                    # PASS YEAR AND MONTH HERE
+                    self.make_daily_table(self.dt_tree2_container, pivot, f"Subcategory ({cat})", selected_year, selected_month)
+                else:
+                    ttk.Label(self.dt_tree2_container, text="No data for this category").pack(pady=20)
+            else:
+                ttk.Label(self.dt_tree2_container, text="Select a Category").pack(pady=20)
+    
+        # Tab 3: Subsubcategory (Index 2)
+        elif tab_index == 2:
+            clear_container(self.dt_tree3_container)
+            cat = self.dt_t3_cat.get()
+            sub = self.dt_t3_sub.get()
+            if cat and sub and not df.empty:
+                sub_df = df[(df['category'] == cat) & (df['subcategory'] == sub)]
+                if not sub_df.empty:
+                    pivot = sub_df.pivot_table(index='day', columns='subsubcategory', values='amount_eur', aggfunc='sum', fill_value=0)
+                    # PASS YEAR AND MONTH HERE
+                    self.make_daily_table(self.dt_tree3_container, pivot, f"Detail ({cat} > {sub})", selected_year, selected_month)
+                else:
+                    ttk.Label(self.dt_tree3_container, text="No data for this subcategory").pack(pady=20)
+            else:
+                ttk.Label(self.dt_tree3_container, text="Select Category and Subcategory").pack(pady=20)
+    
+    # REPLACE THIS METHOD (Ensure it passes the correct index)
+    def on_dt_subtab_change(self, event):
+        # Get the index of the newly selected tab (0, 1, or 2)
+        idx = self.daily_nb.index(self.daily_nb.select())
+        
+        # Special handling for Tab 2 (Subcategory) to ensure cat dropdowns are ready
+        if idx == 1:
+             # The dropdowns should have been populated by update_daily_trans_view
+             pass
+        # Special handling for Tab 3
+        elif idx == 2:
+            self.on_dt_t3_cat_change(None)
+    
+        self.refresh_dt_tables(idx)
+    
+    
+    
+    def make_daily_table(self, parent, pivot_df, title, year, month):
+        # --- FIX: Type Conversion ---
+        # Year comes as a string "2024" from combobox, convert to int
+        try:
+            year_int = int(year)
+        except ValueError:
+            year_int = 2024 # Default fallback
+    
+        # Month comes as a string "January", convert to integer 1-12
+        month_map = {
+            "January": 1, "February": 2, "March": 3, "April": 4, "May": 5, "June": 6,
+            "July": 7, "August": 8, "September": 9, "October": 10, "November": 11, "December": 12
+        }
+        month_int = month_map.get(month, 1) # Default to 1 if not found
+        # ------------------------------
+    
+        # Clear existing tree
+        for widget in parent.winfo_children(): widget.destroy()
+    
+        # Setup scrollable frame
+        frame = ttk.Frame(parent)
+        frame.pack(fill="both", expand=True)
+        canvas = tk.Canvas(frame)
+        scrollbar_v = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+        scrollbar_h = ttk.Scrollbar(frame, orient="horizontal", command=canvas.xview)
+        scrollable_frame = ttk.Frame(canvas)
+    
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar_v.set, xscrollcommand=scrollbar_h.set)
+    
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar_v.pack(side="right", fill="y")
+        scrollbar_h.pack(side="bottom", fill="x")
+    
+        # Treeview
+        cols = list(pivot_df.columns)
+        tree_cols = ["Day"] + list(cols) + ["Total"]
+        tree = ttk.Treeview(scrollable_frame, columns=tree_cols, show="headings")
+    
+        for col in tree_cols:
+            tree.heading(col, text=col)
+            tree.column(col, width=80, minwidth=50, anchor="center", stretch=False)
+    
+        tree.pack(fill="both", expand=True)
+    
+        # --- NEW: Configure Tags ---
+        # Saturday will be red text
+        tree.tag_configure("saturday", foreground="red")
+        # Total row config
+        tree.tag_configure("total", background="#ccc", font=("Arial", 10, "bold"))
+    
+        # Days 1 to 31
+        all_days = range(1, 32)
+        pivot_df = pivot_df.reindex(all_days, fill_value=0)
+    
+        totals = {c: 0.0 for c in cols}
+        grand_total = 0.0
+    
+        for day in all_days:
+            if day not in pivot_df.index: continue
+            
+            row_vals = []
+            row_sum = 0.0
+            
+            for c in cols:
+                val = pivot_df.loc[day, c]
+                row_vals.append(f"{val:.2f}")
+                row_sum += val
+                totals[c] += val
+            
+            row_vals.append(f"{row_sum:.2f}")
+            grand_total += row_sum
+            
+            d = datetime(year_int, month_int, day)
+            
+            # --- NEW: Check if Saturday (weekday() 5 is Saturday) ---
+            row_tags = ()
+            if d.weekday() == 5:
+                row_tags = ("saturday",)
+            # -------------------------------------------------------
+    
+            # --- CHANGE HERE: Format as "10.Sat" ---
+            day_str = d.strftime("%d.%a")
+            # -------------------------------------
+    
+            tree.insert("", "end", values=(day_str, *row_vals), tags=row_tags)
+    
+        # Total Row
+        total_vals = [f"{totals[c]:.2f}" for c in cols]
+        total_vals.append(f"{grand_total:.2f}")
+        tree.insert("", "end", values=("TOTAL", *total_vals), tags=("total",))
+        
+    def plot_daily_total(self, df):
+        self.ax_dt.clear()
+        
+        try:
+            year = int(self.dt_year.get())
+            month = self.dt_month.current() + 1
+        except:
+            year = datetime.now().year
+            month = datetime.now().month
+    
+        if df.empty:
+            self.ax_dt.text(0.5, 0.5, "No Data", ha="center")
+        else:
+            # Group by day
+            daily_totals = df.groupby('day')['amount_eur'].sum()
+            
+            # Reindex for 1-31 to fill gaps with 0
+            all_days = range(1, 32)
+            daily_totals = daily_totals.reindex(all_days, fill_value=0)
+            
+            # PLOT CHANGES:
+            # 1. kind='line' instead of 'bar'
+            # 2. Added marker='o'
+            daily_totals.plot(kind='line', ax=self.ax_dt, color='teal', marker='o', linewidth=2)
+            
+            # Mark weekends with vertical lines
+            for day in range(1, 32):
+                try:
+                    d = datetime(year, month, day)
+                    if d.weekday() >= 5: # Sat or Sun
+                        self.ax_dt.axvline(x=day, color='red', linestyle='--', alpha=0.5, linewidth=1)
+                except ValueError:
+                    pass
+    
+            self.ax_dt.set_title(f"Total Expense Trend: {self.dt_month.get()} {self.dt_year.get()}")
+            self.ax_dt.set_xlabel("Day of Month")
+            self.ax_dt.set_ylabel("Amount (EUR)")
+            self.ax_dt.grid(True, linestyle='-', alpha=0.3)
+            self.ax_dt.set_xticks(all_days[::2]) # Show every other day label if crowded, or all_days
+            
+        self.fig_dt.tight_layout()
+        self.canvas_dt.draw()
+    #----
+   
 
 if __name__ == "__main__":
     root = tk.Tk()
